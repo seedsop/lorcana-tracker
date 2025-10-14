@@ -744,7 +744,7 @@
             Please log in to edit your collection. You can currently view the tracker but cannot make changes.
         </div>
         
-        <div class="file-upload">
+        <div class="file-upload" id="fileUploadSection" style="display: none;">
             <label for="csvFile">Upload CSV File</label>
             <input type="file" id="csvFile" accept=".csv">
         </div>
@@ -856,7 +856,8 @@
                     <th class="sortable" data-column="subtitle">Subtitle</th>
                     <th class="sortable" data-column="set">Set</th>
                     <th class="sortable" data-column="card_number">Card #</th>
-                    <th class="sortable" data-column="color">Color</th>
+                    <th class="sortable" data-column="color_1">Color 1</th>
+                    <th class="sortable" data-column="color_2">Color 2</th>
                     <th class="sortable" data-column="rarity">Rarity</th>
                     <th>Normal Count</th>
                     <th>Foil Count</th>
@@ -1071,6 +1072,7 @@
         const loadCloudBtn = document.getElementById('loadCloud');
         const refreshUsersBtn = document.getElementById('refreshUsers');
         const csvFileInput = document.getElementById('csvFile');
+        const fileUploadSection = document.getElementById('fileUploadSection');
         const totalCardsEl = document.getElementById('totalCards');
         const totalNormalEl = document.getElementById('totalNormal');
         const totalFoilEl = document.getElementById('totalFoil');
@@ -1308,6 +1310,13 @@
                 // Show real-time status
                 realTimeStatus.style.display = 'flex';
                 
+                // Show/hide CSV upload based on admin status
+                if (isAdmin) {
+                    fileUploadSection.style.display = 'block';
+                } else {
+                    fileUploadSection.style.display = 'none';
+                }
+                
                 // Add logout button event listener
                 document.getElementById('logoutBtn').addEventListener('click', logoutUser);
                 
@@ -1333,6 +1342,9 @@
                 
                 // Hide real-time status
                 realTimeStatus.style.display = 'none';
+                
+                // Hide CSV upload for non-logged-in users
+                fileUploadSection.style.display = 'none';
                 
                 // Add login/register button event listener
                 document.getElementById('loginRegisterBtn').addEventListener('click', openAuthModal);
@@ -1400,11 +1412,12 @@
             const rarityValue = rarityFilter.value;
             
             filteredCards = cards.filter(card => {
-                const cardColor = card.color_1 || '';
+                const cardColor1 = card.color_1 || '';
+                const cardColor2 = card.color_2 || '';
                 const matchesName = !nameValue || card.name.toLowerCase().includes(nameValue);
                 const matchesSubtitle = !subtitleValue || (card.subtitle && card.subtitle.toLowerCase().includes(subtitleValue));
                 const matchesSet = !setValue || card.set === setValue;
-                const matchesColor = !colorValue || cardColor === colorValue;
+                const matchesColor = !colorValue || (cardColor1 === colorValue || cardColor2 === colorValue);
                 const matchesRarity = !rarityValue || card.rarity === rarityValue;
                 
                 return matchesName && matchesSubtitle && matchesSet && matchesColor && matchesRarity;
@@ -1471,7 +1484,7 @@
             
             if (filteredCards.length === 0) {
                 const row = document.createElement('tr');
-                row.innerHTML = '<td colspan="8" style="text-align: center;">No cards found</td>';
+                row.innerHTML = '<td colspan="9" style="text-align: center;">No cards found</td>';
                 cardTableBody.appendChild(row);
                 return;
             }
@@ -1479,9 +1492,12 @@
             filteredCards.forEach(card => {
                 const row = document.createElement('tr');
                 
-                // Format color display
-                const colorClass = card.color_1 ? `color-${card.color_1.toLowerCase()}` : '';
-                const colorDisplay = card.color_1 || '';
+                // Format color displays
+                const colorClass1 = card.color_1 ? `color-${card.color_1.toLowerCase()}` : '';
+                const colorDisplay1 = card.color_1 || '';
+                
+                const colorClass2 = card.color_2 ? `color-${card.color_2.toLowerCase()}` : '';
+                const colorDisplay2 = card.color_2 || '';
                 
                 // Format rarity display
                 const rarityClass = card.rarity ? `rarity ${card.rarity.toLowerCase().replace(' ', '-')}` : '';
@@ -1492,7 +1508,8 @@
                     <td>${card.subtitle || ''}</td>
                     <td>Set ${card.set}</td>
                     <td>${card.card_number}</td>
-                    <td class="${colorClass}">${colorDisplay}</td>
+                    <td class="${colorClass1}">${colorDisplay1}</td>
+                    <td class="${colorClass2}">${colorDisplay2}</td>
                     <td class="${rarityClass}">${rarityDisplay}</td>
                     <td>
                         <input type="number" class="count-input" min="0" value="${card.normal || 0}" 
@@ -2068,6 +2085,12 @@
 
         // Handle file upload
         function handleFileUpload(event) {
+            // Only allow admin to upload CSV files
+            if (!isAdmin) {
+                showNotification('Only administrators can upload CSV files', 'error');
+                return;
+            }
+            
             const file = event.target.files[0];
             if (!file) return;
             
@@ -2110,7 +2133,15 @@
                     // Save to local storage
                     saveDataToLocalStorage();
                     
+                    // Also save to cloud if configured
+                    if (realtimeSettings.token && realtimeSettings.gistId) {
+                        saveToCloud();
+                    }
+                    
                     showNotification(`Loaded ${newCards.length} cards from CSV`, 'success');
+                    
+                    // Add activity
+                    addActivity(`${currentUser.username} uploaded CSV with ${newCards.length} cards`);
                 } catch (error) {
                     showNotification('Error parsing CSV file: ' + error.message, 'error');
                     console.error('Error parsing CSV:', error);
