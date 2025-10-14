@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Lorcana Card Tracker</title>
     <style>
+        /* 保持原有样式不变 */
         :root {
             --primary-color: #4a6fa5;
             --secondary-color: #166088;
@@ -896,9 +897,9 @@
         </div>
         
         <div id="setupSection" class="setup-section">
-            <h3>First Time Setup</h3>
-            <p>This tracker uses GitHub Gists to store user data and enable real-time synchronization.</p>
-            <p>To set up the tracker, you'll need to create a GitHub Personal Access Token and update the configuration below.</p>
+            <h3>Administrator Setup</h3>
+            <p>This tracker needs to be configured by an administrator before users can register and login.</p>
+            <p>Administrators need to create a GitHub Personal Access Token to store user data and enable real-time synchronization.</p>
             <button id="setupBtn" class="success-btn">Configure Tracker</button>
         </div>
         
@@ -1054,6 +1055,7 @@
         let userActivities = [];
         let lastUpdateTime = 0;
         let isConfigured = false;
+        let isAdmin = false; // Track if current user is admin
 
         // DOM elements
         const cardTableBody = document.getElementById('cardTableBody');
@@ -1248,10 +1250,13 @@
             const userData = localStorage.getItem('lorcanaCurrentUser');
             if (userData && isConfigured) {
                 currentUser = JSON.parse(userData);
+                // Check if user is admin
+                isAdmin = currentUser.username === 'admin';
                 updateAuthUI();
                 startRealtimeSync();
             } else {
                 currentUser = null;
+                isAdmin = false;
                 updateAuthUI();
                 stopRealtimeSync();
             }
@@ -1266,6 +1271,7 @@
                     <span>${currentUser.username}</span>
                     <div class="online-indicator online"></div>
                     <button id="logoutBtn" class="secondary-btn">Logout</button>
+                    ${isAdmin ? '<button id="adminSetupBtn" class="secondary-btn">Admin Settings</button>' : ''}
                 `;
                 
                 // Enable edit controls
@@ -1280,6 +1286,11 @@
                 
                 // Add logout button event listener
                 document.getElementById('logoutBtn').addEventListener('click', logoutUser);
+                
+                // Add admin setup button event listener if admin
+                if (isAdmin) {
+                    document.getElementById('adminSetupBtn').addEventListener('click', openSetupModal);
+                }
                 
                 // Load user's collection
                 if (currentView === 'my') {
@@ -1338,368 +1349,805 @@
             }
         }
 
-        // Sync real-time data
-        async function syncRealtimeData() {
-            if (!currentUser || !realtimeSettings.token) return;
+        // Populate set filter dropdown
+        function populateSetFilter() {
+            const sets = [...new Set(cards.map(card => card.set))].sort();
             
-            try {
-                // Show syncing indicator
-                syncIndicator.classList.add('syncing');
-                
-                // Get latest data from cloud
-                const realtimeData = await getRealtimeDataFromCloud();
-                
-                // Check if there are updates
-                if (realtimeData.lastUpdate > lastUpdateTime) {
-                    lastUpdateTime = realtimeData.lastUpdate;
-                    
-                    // Update aggregated data if in all users view
-                    if (currentView === 'all') {
-                        await loadAggregatedCollection();
-                        await loadUserActivities();
-                        applyFilters();
-                        updateStats();
-                        
-                        // Show notification about updates
-                        showNotification('Collection data updated', false, 2000);
-                    }
-                }
-                
-                // Update user's last activity
-                await updateUserActivity();
-                
-            } catch (error) {
-                console.error('Error syncing real-time data:', error);
-            } finally {
-                // Hide syncing indicator
-                syncIndicator.classList.remove('syncing');
-            }
-        }
-
-        // Get real-time data from cloud
-        async function getRealtimeDataFromCloud() {
-            if (!realtimeSettings.token || !realtimeSettings.gistId) {
-                // Return default data if not configured
-                return {
-                    collections: {},
-                    activities: [],
-                    lastUpdate: Date.now()
-                };
+            // Clear existing options except "All Sets"
+            while (setFilter.options.length > 1) {
+                setFilter.remove(1);
             }
             
-            try {
-                const response = await fetch(`https://api.github.com/gists/${realtimeSettings.gistId}`, {
-                    headers: {
-                        'Authorization': `token ${realtimeSettings.token}`
-                    }
-                });
-                
-                if (!response.ok) {
-                    throw new Error(`GitHub API error: ${response.status}`);
-                }
-                
-                const gistData = await response.json();
-                const fileContent = gistData.files['realtime-data.json'].content;
-                return JSON.parse(fileContent);
-            } catch (error) {
-                console.error('Error fetching real-time data from cloud:', error);
-                // Return default data
-                return {
-                    collections: {},
-                    activities: [],
-                    lastUpdate: Date.now()
-                };
-            }
+            // Add new options
+            sets.forEach(set => {
+                const option = document.createElement('option');
+                option.value = set;
+                option.textContent = `Set ${set}`;
+                setFilter.appendChild(option);
+            });
         }
 
-        // Save real-time data to cloud
-        async function saveRealtimeDataToCloud(data) {
-            if (!realtimeSettings.token) {
-                console.error('Real-time token not configured');
+        // Apply filters to the card list
+        function applyFilters() {
+            const nameValue = nameFilter.value.toLowerCase();
+            const subtitleValue = subtitleFilter.value.toLowerCase();
+            const setValue = setFilter.value;
+            const colorValue = colorFilter.value;
+            const rarityValue = rarityFilter.value;
+            
+            filteredCards = cards.filter(card => {
+                const cardColor = card.color_1 || '';
+                const matchesName = !nameValue || card.name.toLowerCase().includes(nameValue);
+                const matchesSubtitle = !subtitleValue || (card.subtitle && card.subtitle.toLowerCase().includes(subtitleValue));
+                const matchesSet = !setValue || card.set === setValue;
+                const matchesColor = !colorValue || cardColor === colorValue;
+                const matchesRarity = !rarityValue || card.rarity === rarityValue;
+                
+                return matchesName && matchesSubtitle && matchesSet && matchesColor && matchesRarity;
+            });
+            
+            renderTable();
+            updateStats();
+        }
+
+        // Reset all filters
+        function resetFilters() {
+            nameFilter.value = '';
+            subtitleFilter.value = '';
+            setFilter.value = '';
+            colorFilter.value = '';
+            rarityFilter.value = '';
+            
+            applyFilters();
+        }
+
+        // Handle sorting
+        function handleSort(column) {
+            if (sortColumn === column) {
+                sortDirection = sortDirection === 'asc' ? 'desc' : 'asc';
+            } else {
+                sortColumn = column;
+                sortDirection = 'asc';
+            }
+            
+            // Update sort indicators
+            document.querySelectorAll('.sortable').forEach(header => {
+                header.classList.remove('sort-asc', 'sort-desc');
+                if (header.dataset.column === column) {
+                    header.classList.add(sortDirection === 'asc' ? 'sort-asc' : 'sort-desc');
+                }
+            });
+            
+            // Sort the cards
+            filteredCards.sort((a, b) => {
+                let valueA = a[column] || '';
+                let valueB = b[column] || '';
+                
+                // Special handling for card_number to sort numerically
+                if (column === 'card_number') {
+                    valueA = parseInt(valueA) || 0;
+                    valueB = parseInt(valueB) || 0;
+                }
+                
+                if (valueA < valueB) {
+                    return sortDirection === 'asc' ? -1 : 1;
+                }
+                if (valueA > valueB) {
+                    return sortDirection === 'asc' ? 1 : -1;
+                }
+                return 0;
+            });
+            
+            renderTable();
+        }
+
+        // Render the card table
+        function renderTable() {
+            cardTableBody.innerHTML = '';
+            
+            if (filteredCards.length === 0) {
+                const row = document.createElement('tr');
+                row.innerHTML = '<td colspan="8" style="text-align: center;">No cards found</td>';
+                cardTableBody.appendChild(row);
                 return;
             }
             
-            try {
+            filteredCards.forEach(card => {
+                const row = document.createElement('tr');
+                
+                // Format color display
+                const colorClass = card.color_1 ? `color-${card.color_1.toLowerCase()}` : '';
+                const colorDisplay = card.color_1 || '';
+                
+                // Format rarity display
+                const rarityClass = card.rarity ? `rarity ${card.rarity.toLowerCase().replace(' ', '-')}` : '';
+                const rarityDisplay = card.rarity || '';
+                
+                row.innerHTML = `
+                    <td>${card.name}</td>
+                    <td>${card.subtitle || ''}</td>
+                    <td>Set ${card.set}</td>
+                    <td>${card.card_number}</td>
+                    <td class="${colorClass}">${colorDisplay}</td>
+                    <td class="${rarityClass}">${rarityDisplay}</td>
+                    <td>
+                        <input type="number" class="count-input" min="0" value="${card.normal || 0}" 
+                            data-card-name="${card.name}" data-card-subtitle="${card.subtitle || ''}" 
+                            data-type="normal" ${!currentUser ? 'disabled' : ''}>
+                    </td>
+                    <td>
+                        <input type="number" class="count-input" min="0" value="${card.foil || 0}" 
+                            data-card-name="${card.name}" data-card-subtitle="${card.subtitle || ''}" 
+                            data-type="foil" ${!currentUser ? 'disabled' : ''}>
+                    </td>
+                `;
+                
+                cardTableBody.appendChild(row);
+                
+                // Add event listeners to count inputs
+                const countInputs = row.querySelectorAll('.count-input');
+                countInputs.forEach(input => {
+                    input.addEventListener('change', handleCountChange);
+                });
+            });
+        }
+
+        // Handle count input changes
+        function handleCountChange(event) {
+            if (!currentUser) return;
+            
+            const input = event.target;
+            const cardName = input.dataset.cardName;
+            const cardSubtitle = input.dataset.cardSubtitle;
+            const type = input.dataset.type;
+            const value = parseInt(input.value) || 0;
+            
+            // Find the card in the cards array
+            const card = cards.find(c => 
+                c.name === cardName && (c.subtitle || '') === cardSubtitle
+            );
+            
+            if (card) {
+                card[type] = value;
+                
+                // Update the stats
+                updateStats();
+                
+                // Save to local storage
+                saveDataToLocalStorage();
+                
+                // Auto-save to cloud if configured
+                if (realtimeSettings.token && realtimeSettings.gistId) {
+                    saveToCloud();
+                }
+                
+                // Add activity
+                addActivity(`${currentUser.username} updated ${cardName} ${type} count to ${value}`);
+            }
+        }
+
+        // Update statistics
+        function updateStats() {
+            if (currentView === 'my') {
+                // Calculate stats for current user's collection
+                let totalCards = 0;
+                let totalNormal = 0;
+                let totalFoil = 0;
+                let uniqueCards = 0;
+                
+                cards.forEach(card => {
+                    const normalCount = parseInt(card.normal) || 0;
+                    const foilCount = parseInt(card.foil) || 0;
+                    
+                    totalNormal += normalCount;
+                    totalFoil += foilCount;
+                    
+                    if (normalCount > 0 || foilCount > 0) {
+                        uniqueCards++;
+                    }
+                });
+                
+                totalCards = totalNormal + totalFoil;
+                
+                totalCardsEl.textContent = totalCards;
+                totalNormalEl.textContent = totalNormal;
+                totalFoilEl.textContent = totalFoil;
+                uniqueCardsEl.textContent = uniqueCards;
+            } else {
+                // Calculate stats for all users
+                let allUsersCount = allUsers.length;
+                let allCardsCount = 0;
+                let allNormalCount = 0;
+                let allFoilCount = 0;
+                
+                allUsers.forEach(user => {
+                    allCardsCount += user.totalCards || 0;
+                    allNormalCount += user.normalCards || 0;
+                    allFoilCount += user.foilCards || 0;
+                });
+                
+                allUsersTotalEl.textContent = allUsersCount;
+                allUsersCardsEl.textContent = allCardsCount;
+                allUsersNormalEl.textContent = allNormalCount;
+                allUsersFoilEl.textContent = allFoilCount;
+                
+                // Update user stats table
+                updateUserStatsTable();
+            }
+        }
+
+        // Update user stats table
+        function updateUserStatsTable() {
+            userStatsTableBody.innerHTML = '';
+            
+            if (allUsers.length === 0) {
+                const row = document.createElement('tr');
+                row.innerHTML = '<td colspan="7" style="text-align: center;">No users found</td>';
+                userStatsTableBody.appendChild(row);
+                return;
+            }
+            
+            allUsers.forEach(user => {
+                const row = document.createElement('tr');
+                
+                // Add active class if this is the current user
+                if (currentUser && user.username === currentUser.username) {
+                    row.classList.add('active-user');
+                }
+                
+                // Format last activity time
+                const lastActivity = user.lastActivity ? new Date(user.lastActivity).toLocaleString() : 'Never';
+                
+                row.innerHTML = `
+                    <td>${user.username}</td>
+                    <td>${user.online ? '<span style="color: green;">Online</span>' : '<span style="color: gray;">Offline</span>'}</td>
+                    <td>${user.totalCards || 0}</td>
+                    <td>${user.normalCards || 0}</td>
+                    <td>${user.foilCards || 0}</td>
+                    <td>${user.uniqueCards || 0}</td>
+                    <td>${lastActivity}</td>
+                `;
+                
+                userStatsTableBody.appendChild(row);
+            });
+        }
+
+        // Save data to local storage
+        function saveData() {
+            saveDataToLocalStorage();
+            showNotification('Data saved locally', 'success');
+        }
+
+        // Save data to local storage (internal function)
+        function saveDataToLocalStorage() {
+            if (currentUser) {
+                const userData = {
+                    username: currentUser.username,
+                    cards: cards,
+                    lastUpdated: new Date().toISOString()
+                };
+                
+                localStorage.setItem(`lorcanaUserData_${currentUser.username}`, JSON.stringify(userData));
+            }
+        }
+
+        // Load data from local storage
+        function loadData() {
+            if (!currentUser) return;
+            
+            const userData = localStorage.getItem(`lorcanaUserData_${currentUser.username}`);
+            
+            if (userData) {
+                const parsedData = JSON.parse(userData);
+                cards = parsedData.cards || [...initialCards];
+                filteredCards = [...cards];
+                renderTable();
+                updateStats();
+                showNotification('Data loaded from local storage', 'success');
+            } else {
+                showNotification('No local data found', 'warning');
+            }
+        }
+
+        // Save data to cloud (GitHub Gist)
+        function saveToCloud() {
+            if (!currentUser || !realtimeSettings.token) {
+                showNotification('Not configured for cloud sync', 'error');
+                return;
+            }
+            
+            syncIndicator.classList.add('syncing');
+            
+            const userData = {
+                username: currentUser.username,
+                cards: cards,
+                lastUpdated: new Date().toISOString()
+            };
+            
+            const gistData = {
+                description: `Lorcana Card Tracker Data for ${currentUser.username}`,
+                files: {
+                    "data.json": {
+                        content: JSON.stringify(userData)
+                    }
+                }
+            };
+            
+            // If we have a gist ID, update it, otherwise create a new one
+            const url = realtimeSettings.gistId 
+                ? `https://api.github.com/gists/${realtimeSettings.gistId}`
+                : 'https://api.github.com/gists';
+            
+            const method = realtimeSettings.gistId ? 'PATCH' : 'POST';
+            
+            fetch(url, {
+                method: method,
+                headers: {
+                    'Authorization': `token ${realtimeSettings.token}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(gistData)
+            })
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error('Failed to save to cloud');
+                }
+                return response.json();
+            })
+            .then(data => {
+                // If we created a new gist, save the ID
+                if (!realtimeSettings.gistId && data.id) {
+                    realtimeSettings.gistId = data.id;
+                    localStorage.setItem('realtimeGistId', data.id);
+                    
+                    // Update user data with the new gist ID
+                    if (currentUser) {
+                        currentUser.realtimeGistId = data.id;
+                        localStorage.setItem('lorcanaCurrentUser', JSON.stringify(currentUser));
+                        
+                        // Update user in the database
+                        updateUserInDb(currentUser);
+                    }
+                }
+                
+                syncIndicator.classList.remove('syncing');
+                showNotification('Data saved to cloud', 'success');
+                
+                // Add activity
+                addActivity(`${currentUser.username} saved data to cloud`);
+            })
+            .catch(error => {
+                syncIndicator.classList.remove('syncing');
+                showNotification('Error saving to cloud: ' + error.message, 'error');
+                console.error('Error saving to cloud:', error);
+            });
+        }
+
+        // Load data from cloud (GitHub Gist)
+        function loadFromCloud() {
+            if (!currentUser || !realtimeSettings.token || !realtimeSettings.gistId) {
+                showNotification('Not configured for cloud sync', 'error');
+                return;
+            }
+            
+            syncIndicator.classList.add('syncing');
+            
+            fetch(`https://api.github.com/gists/${realtimeSettings.gistId}`, {
+                headers: {
+                    'Authorization': `token ${realtimeSettings.token}`
+                }
+            })
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error('Failed to load from cloud');
+                }
+                return response.json();
+            })
+            .then(data => {
+                const fileContent = data.files["data.json"].content;
+                const userData = JSON.parse(fileContent);
+                
+                if (userData.username === currentUser.username) {
+                    cards = userData.cards || [...initialCards];
+                    filteredCards = [...cards];
+                    renderTable();
+                    updateStats();
+                    saveDataToLocalStorage();
+                    
+                    syncIndicator.classList.remove('syncing');
+                    showNotification('Data loaded from cloud', 'success');
+                    
+                    // Add activity
+                    addActivity(`${currentUser.username} loaded data from cloud`);
+                } else {
+                    throw new Error('Data does not belong to current user');
+                }
+            })
+            .catch(error => {
+                syncIndicator.classList.remove('syncing');
+                showNotification('Error loading from cloud: ' + error.message, 'error');
+                console.error('Error loading from cloud:', error);
+            });
+        }
+
+        // Sync real-time data
+        function syncRealtimeData() {
+            if (!currentUser || !realtimeSettings.token || !realtimeSettings.gistId) return;
+            
+            // Only sync if it's been at least 5 seconds since the last sync
+            const now = Date.now();
+            if (now - realtimeSettings.lastSync < 5000) return;
+            
+            realtimeSettings.lastSync = now;
+            
+            fetch(`https://api.github.com/gists/${realtimeSettings.gistId}`, {
+                headers: {
+                    'Authorization': `token ${realtimeSettings.token}`
+                }
+            })
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error('Failed to sync data');
+                }
+                return response.json();
+            })
+            .then(data => {
+                const fileContent = data.files["data.json"].content;
+                const cloudData = JSON.parse(fileContent);
+                
+                // Check if the cloud data is newer than our local data
+                const localLastUpdated = new Date(lastUpdateTime).getTime();
+                const cloudLastUpdated = new Date(cloudData.lastUpdated).getTime();
+                
+                if (cloudLastUpdated > localLastUpdated) {
+                    // Update local data with cloud data
+                    cards = cloudData.cards || [...initialCards];
+                    filteredCards = [...cards];
+                    renderTable();
+                    updateStats();
+                    saveDataToLocalStorage();
+                    
+                    lastUpdateTime = cloudLastUpdated;
+                    
+                    // Add activity
+                    addActivity(`${currentUser.username} synced data from cloud`);
+                }
+            })
+            .catch(error => {
+                console.error('Error syncing real-time data:', error);
+            });
+        }
+
+        // Refresh user data from the database
+        function refreshUserData() {
+            if (!userDbSettings.token) {
+                showNotification('User database not configured', 'error');
+                return;
+            }
+            
+            loadUsersFromDb()
+                .then(users => {
+                    allUsers = users;
+                    
+                    if (currentView === 'all') {
+                        updateStats();
+                        updateUserStatsTable();
+                    }
+                    
+                    showNotification('User data refreshed', 'success');
+                })
+                .catch(error => {
+                    showNotification('Error refreshing user data: ' + error.message, 'error');
+                });
+        }
+
+        // Load users from the database
+        function loadUsersFromDb() {
+            return new Promise((resolve, reject) => {
+                if (!userDbSettings.token) {
+                    reject(new Error('User database not configured'));
+                    return;
+                }
+                
+                const url = userDbSettings.gistId 
+                    ? `https://api.github.com/gists/${userDbSettings.gistId}`
+                    : 'https://api.github.com/gists';
+                
+                fetch(url, {
+                    headers: {
+                        'Authorization': `token ${userDbSettings.token}`
+                    }
+                })
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('Failed to load user database');
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    let users = [];
+                    
+                    if (data.files && data.files["users.json"]) {
+                        const fileContent = data.files["users.json"].content;
+                        users = JSON.parse(fileContent);
+                    }
+                    
+                    resolve(users);
+                })
+                .catch(error => {
+                    reject(error);
+                });
+            });
+        }
+
+        // Save users to the database
+        function saveUsersToDb(users) {
+            return new Promise((resolve, reject) => {
+                if (!userDbSettings.token) {
+                    reject(new Error('User database not configured'));
+                    return;
+                }
+                
                 const gistData = {
-                    description: 'Lorcana Card Tracker Real-time Data',
-                    public: false,
+                    description: 'Lorcana Card Tracker User Database',
                     files: {
-                        'realtime-data.json': {
-                            content: JSON.stringify(data)
+                        "users.json": {
+                            content: JSON.stringify(users)
                         }
                     }
                 };
                 
-                let url;
-                let method;
+                // If we have a gist ID, update it, otherwise create a new one
+                const url = userDbSettings.gistId 
+                    ? `https://api.github.com/gists/${userDbSettings.gistId}`
+                    : 'https://api.github.com/gists';
                 
-                if (realtimeSettings.gistId) {
-                    // Update existing gist
-                    url = `https://api.github.com/gists/${realtimeSettings.gistId}`;
-                    method = 'PATCH';
-                } else {
-                    // Create new gist
-                    url = 'https://api.github.com/gists';
-                    method = 'POST';
-                }
+                const method = userDbSettings.gistId ? 'PATCH' : 'POST';
                 
-                const response = await fetch(url, {
+                fetch(url, {
                     method: method,
                     headers: {
-                        'Authorization': `token ${realtimeSettings.token}`,
+                        'Authorization': `token ${userDbSettings.token}`,
                         'Content-Type': 'application/json'
                     },
                     body: JSON.stringify(gistData)
+                })
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('Failed to save user database');
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    // If we created a new gist, save the ID
+                    if (!userDbSettings.gistId && data.id) {
+                        userDbSettings.gistId = data.id;
+                        localStorage.setItem('userDbGistId', data.id);
+                    }
+                    
+                    resolve(data);
+                })
+                .catch(error => {
+                    reject(error);
                 });
-                
-                if (!response.ok) {
-                    throw new Error(`GitHub API error: ${response.status}`);
-                }
-                
-                const responseData = await response.json();
-                
-                // Save gist ID if this was a new gist
-                if (!realtimeSettings.gistId) {
-                    realtimeSettings.gistId = responseData.id;
-                    localStorage.setItem('realtimeGistId', realtimeSettings.gistId);
-                }
-            } catch (error) {
-                console.error('Error saving real-time data to cloud:', error);
+            });
+        }
+
+        // Update a user in the database
+        function updateUserInDb(updatedUser) {
+            loadUsersFromDb()
+                .then(users => {
+                    const userIndex = users.findIndex(u => u.username === updatedUser.username);
+                    
+                    if (userIndex !== -1) {
+                        users[userIndex] = updatedUser;
+                    } else {
+                        users.push(updatedUser);
+                    }
+                    
+                    return saveUsersToDb(users);
+                })
+                .then(() => {
+                    // Add activity
+                    addActivity(`${updatedUser.username} profile updated`);
+                })
+                .catch(error => {
+                    console.error('Error updating user in database:', error);
+                });
+        }
+
+        // Load user collection
+        function loadUserCollection() {
+            if (!currentUser) return;
+            
+            // Try to load from local storage first
+            const localUserData = localStorage.getItem(`lorcanaUserData_${currentUser.username}`);
+            
+            if (localUserData) {
+                const parsedData = JSON.parse(localUserData);
+                cards = parsedData.cards || [...initialCards];
+                filteredCards = [...cards];
+                lastUpdateTime = new Date(parsedData.lastUpdated).getTime() || 0;
+                renderTable();
+                updateStats();
+            }
+            
+            // Then try to load from cloud if configured
+            if (realtimeSettings.token && realtimeSettings.gistId) {
+                loadFromCloud();
             }
         }
 
-        // Update user activity
-        async function updateUserActivity() {
-            if (!currentUser) return;
+        // Load aggregated collection
+        function loadAggregatedCollection() {
+            // This would normally load data from all users and aggregate it
+            // For now, we'll just use the initial cards
+            cards = [...initialCards];
+            filteredCards = [...cards];
+            renderTable();
             
-            try {
-                // Get current real-time data
-                const realtimeData = await getRealtimeDataFromCloud();
-                
-                // Update user's last activity
-                if (!realtimeData.userActivities) {
-                    realtimeData.userActivities = {};
-                }
-                
-                realtimeData.userActivities[currentUser.id] = {
-                    username: currentUser.username,
-                    lastActivity: Date.now(),
-                    isOnline: true
-                };
-                
-                // Add activity log
-                if (!realtimeData.activities) {
-                    realtimeData.activities = [];
-                }
-                
-                // Add new activity
-                realtimeData.activities.unshift({
-                    userId: currentUser.id,
-                    username: currentUser.username,
-                    action: 'active',
-                    timestamp: Date.now()
-                });
-                
-                // Keep only last 50 activities
-                if (realtimeData.activities.length > 50) {
-                    realtimeData.activities = realtimeData.activities.slice(0, 50);
-                }
-                
-                // Update last update time
-                realtimeData.lastUpdate = Date.now();
-                
-                // Save to cloud
-                await saveRealtimeDataToCloud(realtimeData);
-            } catch (error) {
-                console.error('Error updating user activity:', error);
-            }
-        }
-
-        // Log user activity
-        async function logUserActivity(action, details = {}) {
-            if (!currentUser) return;
-            
-            try {
-                // Get current real-time data
-                const realtimeData = await getRealtimeDataFromCloud();
-                
-                // Add activity log
-                if (!realtimeData.activities) {
-                    realtimeData.activities = [];
-                }
-                
-                // Add new activity
-                realtimeData.activities.unshift({
-                    userId: currentUser.id,
-                    username: currentUser.username,
-                    action: action,
-                    details: details,
-                    timestamp: Date.now()
-                });
-                
-                // Keep only last 50 activities
-                if (realtimeData.activities.length > 50) {
-                    realtimeData.activities = realtimeData.activities.slice(0, 50);
-                }
-                
-                // Update last update time
-                realtimeData.lastUpdate = Date.now();
-                
-                // Save to cloud
-                await saveRealtimeDataToCloud(realtimeData);
-            } catch (error) {
-                console.error('Error logging user activity:', error);
-            }
+            // Load user stats
+            refreshUserData();
         }
 
         // Load user activities
-        async function loadUserActivities() {
-            try {
-                const realtimeData = await getRealtimeDataFromCloud();
-                const activities = realtimeData.activities || [];
-                
-                // Clear activity feed
-                activityFeed.innerHTML = '';
-                
-                // Add activities to feed
-                activities.forEach(activity => {
-                    const activityItem = document.createElement('div');
-                    activityItem.className = 'activity-item';
-                    
-                    const time = new Date(activity.timestamp);
-                    const timeString = time.toLocaleTimeString();
-                    
-                    let actionText = '';
-                    switch (activity.action) {
-                        case 'active':
-                            actionText = 'is now active';
-                            break;
-                        case 'update':
-                            actionText = `updated ${activity.details.cardName}`;
-                            break;
-                        case 'add':
-                            actionText = `added ${activity.details.cardName}`;
-                            break;
-                        case 'login':
-                            actionText = 'logged in';
-                            break;
-                        case 'logout':
-                            actionText = 'logged out';
-                            break;
-                        default:
-                            actionText = activity.action;
-                    }
-                    
-                    activityItem.innerHTML = `
-                        <strong>${activity.username}</strong> ${actionText}
-                        <div class="activity-time">${timeString}</div>
-                    `;
-                    
-                    activityFeed.appendChild(activityItem);
-                });
-                
-                if (activities.length === 0) {
-                    activityFeed.innerHTML = '<div class="activity-item">No recent activity</div>';
-                }
-            } catch (error) {
-                console.error('Error loading user activities:', error);
-                activityFeed.innerHTML = '<div class="activity-item">Error loading activities</div>';
+        function loadUserActivities() {
+            // This would normally load activities from a central location
+            // For now, we'll just use the activities we've collected
+            renderActivities();
+        }
+
+        // Add an activity
+        function addActivity(message) {
+            const activity = {
+                message: message,
+                timestamp: new Date().toISOString(),
+                username: currentUser ? currentUser.username : 'System'
+            };
+            
+            userActivities.unshift(activity);
+            
+            // Keep only the last 50 activities
+            if (userActivities.length > 50) {
+                userActivities = userActivities.slice(0, 50);
+            }
+            
+            // Update the activity feed if it's visible
+            if (currentView === 'all') {
+                renderActivities();
             }
         }
 
-        // Open setup modal
-        function openSetupModal() {
-            setupUserDbTokenInput.value = userDbSettings.token;
-            setupUserDbGistIdInput.value = userDbSettings.gistId;
-            setupRealtimeTokenInput.value = realtimeSettings.token;
-            setupRealtimeGistIdInput.value = realtimeSettings.gistId;
-            setupSyncIntervalInput.value = realtimeSettings.syncInterval;
-            setupModal.style.display = 'block';
-        }
-
-        // Close setup modal
-        function closeSetupModal() {
-            setupModal.style.display = 'none';
-        }
-
-        // Save setup configuration
-        async function saveSetup() {
-            userDbSettings.token = setupUserDbTokenInput.value;
-            userDbSettings.gistId = setupUserDbGistIdInput.value;
-            realtimeSettings.token = setupRealtimeTokenInput.value;
-            realtimeSettings.gistId = setupRealtimeGistIdInput.value;
-            realtimeSettings.syncInterval = parseInt(setupSyncIntervalInput.value);
+        // Render activities
+        function renderActivities() {
+            activityFeed.innerHTML = '';
             
-            localStorage.setItem('userDbToken', userDbSettings.token);
-            localStorage.setItem('userDbGistId', userDbSettings.gistId);
-            localStorage.setItem('realtimeToken', realtimeSettings.token);
-            localStorage.setItem('realtimeGistId', realtimeSettings.gistId);
-            localStorage.setItem('syncInterval', realtimeSettings.syncInterval);
+            if (userActivities.length === 0) {
+                activityFeed.innerHTML = '<div class="activity-item">No recent activity</div>';
+                return;
+            }
             
-            // Check if both tokens are provided
-            if (userDbSettings.token && realtimeSettings.token) {
-                isConfigured = true;
-                setupSection.style.display = 'none';
+            userActivities.forEach(activity => {
+                const item = document.createElement('div');
+                item.className = 'activity-item';
                 
-                // Try to initialize the database if it doesn't exist
+                const time = new Date(activity.timestamp).toLocaleString();
+                
+                item.innerHTML = `
+                    <div>${activity.message}</div>
+                    <div class="activity-time">${activity.username} - ${time}</div>
+                `;
+                
+                activityFeed.appendChild(item);
+            });
+        }
+
+        // Handle file upload
+        function handleFileUpload(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            
+            const reader = new FileReader();
+            
+            reader.onload = function(e) {
                 try {
-                    const users = await getUsersFromCloud();
-                    if (users.length === 0) {
-                        // Create empty user database
-                        await saveUsersToCloud(users);
+                    const csvData = e.target.result;
+                    const lines = csvData.split('\n');
+                    const headers = lines[0].split(',').map(h => h.trim());
+                    
+                    // Parse CSV data
+                    const newCards = [];
+                    
+                    for (let i = 1; i < lines.length; i++) {
+                        const line = lines[i].trim();
+                        if (!line) continue;
+                        
+                        const values = line.split(',').map(v => v.trim().replace(/^"|"$/g, ''));
+                        
+                        const card = {};
+                        headers.forEach((header, index) => {
+                            card[header] = values[index] || '';
+                        });
+                        
+                        // Initialize counts if not present
+                        if (!card.normal) card.normal = 0;
+                        if (!card.foil) card.foil = 0;
+                        
+                        newCards.push(card);
                     }
                     
-                    // Initialize real-time data
-                    const realtimeData = await getRealtimeDataFromCloud();
-                    if (!realtimeData.collections) {
-                        realtimeData.collections = {};
-                        realtimeData.activities = [];
-                        realtimeData.userActivities = {};
-                        realtimeData.lastUpdate = Date.now();
-                        await saveRealtimeDataToCloud(realtimeData);
-                    }
+                    // Replace current cards with the new ones
+                    cards = newCards;
+                    filteredCards = [...cards];
+                    renderTable();
+                    updateStats();
+                    populateSetFilter();
+                    
+                    // Save to local storage
+                    saveDataToLocalStorage();
+                    
+                    showNotification(`Loaded ${newCards.length} cards from CSV`, 'success');
                 } catch (error) {
-                    console.error('Error initializing database:', error);
+                    showNotification('Error parsing CSV file: ' + error.message, 'error');
+                    console.error('Error parsing CSV:', error);
                 }
-                
-                closeSetupModal();
-                showNotification('Configuration saved successfully!');
-                
-                // Restart real-time sync if user is logged in
-                if (currentUser) {
-                    stopRealtimeSync();
-                    startRealtimeSync();
-                }
+            };
+            
+            reader.readAsText(file);
+        }
+
+        // Update cloud status indicator
+        function updateCloudStatus() {
+            if (userDbSettings.token && realtimeSettings.token) {
+                cloudStatusIndicator.classList.add('connected');
+                cloudStatusText.textContent = 'Connected to cloud storage';
             } else {
-                showNotification('Please provide both tokens', true);
+                cloudStatusIndicator.classList.remove('connected');
+                cloudStatusText.textContent = 'Not connected to cloud storage';
             }
+        }
+
+        // Show notification
+        function showNotification(message, type = 'success') {
+            notification.textContent = message;
+            notification.className = 'notification show';
+            
+            if (type === 'error') {
+                notification.classList.add('error');
+            } else if (type === 'warning') {
+                notification.classList.add('warning');
+            }
+            
+            setTimeout(() => {
+                notification.classList.remove('show');
+            }, 3000);
         }
 
         // Open authentication modal
         function openAuthModal() {
-            if (!isConfigured) {
-                showNotification('Please configure the tracker first', true);
-                openSetupModal();
-                return;
-            }
-            
             authModal.style.display = 'block';
-            switchAuthMode('login');
+            resetAuthForm();
         }
 
         // Close authentication modal
         function closeAuthModal() {
             authModal.style.display = 'none';
-            // Clear form fields
+            resetAuthForm();
+        }
+
+        // Reset authentication form
+        function resetAuthForm() {
             loginUsername.value = '';
             loginPassword.value = '';
             registerUsername.value = '';
             registerEmail.value = '';
             registerPassword.value = '';
             confirmPassword.value = '';
+            
+            switchAuthMode('login');
         }
 
-        // Switch between login and register modes
+        // Switch authentication mode
         function switchAuthMode(mode) {
             authMode = mode;
             
@@ -1718,1010 +2166,248 @@
             }
         }
 
-        // Handle authentication (login or register)
+        // Handle authentication
         function handleAuth() {
             if (authMode === 'login') {
-                loginUser();
+                handleLogin();
             } else {
-                registerUser();
+                handleRegister();
             }
         }
 
-        // Simple hash function for passwords (not secure for production, but better than plaintext)
-        function simpleHash(str) {
-            let hash = 0;
-            for (let i = 0; i < str.length; i++) {
-                const char = str.charCodeAt(i);
-                hash = ((hash << 5) - hash) + char;
-                hash = hash & hash; // Convert to 32-bit integer
-            }
-            return hash.toString();
-        }
-
-        // Get users from cloud database
-        async function getUsersFromCloud() {
-            if (!userDbSettings.token || !userDbSettings.gistId) {
-                // If user database is not configured, return empty array
-                return [];
-            }
-            
-            try {
-                const response = await fetch(`https://api.github.com/gists/${userDbSettings.gistId}`, {
-                    headers: {
-                        'Authorization': `token ${userDbSettings.token}`
-                    }
-                });
-                
-                if (!response.ok) {
-                    throw new Error(`GitHub API error: ${response.status}`);
-                }
-                
-                const gistData = await response.json();
-                const fileContent = gistData.files['user-database.json'].content;
-                return JSON.parse(fileContent);
-            } catch (error) {
-                console.error('Error fetching users from cloud:', error);
-                // Return empty array
-                return [];
-            }
-        }
-
-        // Save users to cloud database
-        async function saveUsersToCloud(users) {
-            if (!userDbSettings.token) {
-                console.error('User database token not configured');
-                return;
-            }
-            
-            try {
-                const data = {
-                    description: 'Lorcana Card Tracker User Database',
-                    public: false,
-                    files: {
-                        'user-database.json': {
-                            content: JSON.stringify(users)
-                        }
-                    }
-                };
-                
-                let url;
-                let method;
-                
-                if (userDbSettings.gistId) {
-                    // Update existing gist
-                    url = `https://api.github.com/gists/${userDbSettings.gistId}`;
-                    method = 'PATCH';
-                } else {
-                    // Create new gist
-                    url = 'https://api.github.com/gists';
-                    method = 'POST';
-                }
-                
-                const response = await fetch(url, {
-                    method: method,
-                    headers: {
-                        'Authorization': `token ${userDbSettings.token}`,
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify(data)
-                });
-                
-                if (!response.ok) {
-                    throw new Error(`GitHub API error: ${response.status}`);
-                }
-                
-                const gistData = await response.json();
-                
-                // Save gist ID if this was a new gist
-                if (!userDbSettings.gistId) {
-                    userDbSettings.gistId = gistData.id;
-                    localStorage.setItem('userDbGistId', userDbSettings.gistId);
-                }
-            } catch (error) {
-                console.error('Error saving users to cloud:', error);
-            }
-        }
-
-        // Register a new user
-        async function registerUser() {
-            const username = registerUsername.value.trim();
-            const email = registerEmail.value.trim();
-            const password = registerPassword.value;
-            const confirmPass = confirmPassword.value;
-            
-            // Validation
-            if (!username || !email || !password || !confirmPass) {
-                showNotification('Please fill in all fields', true);
-                return;
-            }
-            
-            if (password !== confirmPass) {
-                showNotification('Passwords do not match', true);
-                return;
-            }
-            
-            // Show loading state
-            submitAuthBtn.disabled = true;
-            submitAuthBtn.innerHTML = '<span class="loading"></span> Registering...';
-            
-            try {
-                // Get existing users from cloud
-                const users = await getUsersFromCloud();
-                
-                // Check if username already exists
-                if (users.find(user => user.username === username)) {
-                    showNotification('Username already exists', true);
-                    submitAuthBtn.disabled = false;
-                    submitAuthBtn.textContent = 'Register';
-                    return;
-                }
-                
-                // Create new user
-                const newUser = {
-                    id: Date.now().toString(),
-                    username,
-                    email,
-                    password: simpleHash(password), // Store hashed password
-                    createdAt: new Date().toISOString()
-                };
-                
-                // Save user to cloud
-                users.push(newUser);
-                await saveUsersToCloud(users);
-                
-                // Log in the new user
-                currentUser = newUser;
-                localStorage.setItem('lorcanaCurrentUser', JSON.stringify(newUser));
-                
-                // Update UI
-                updateAuthUI();
-                closeAuthModal();
-                showNotification('Registration successful!');
-                
-                // Log user activity
-                logUserActivity('login');
-                
-                // Initialize user's collection
-                initializeUserCollection();
-            } catch (error) {
-                showNotification(`Registration failed: ${error.message}`, true);
-                console.error(error);
-            } finally {
-                submitAuthBtn.disabled = false;
-                submitAuthBtn.textContent = 'Register';
-            }
-        }
-
-        // Login an existing user
-        async function loginUser() {
+        // Handle login
+        function handleLogin() {
             const username = loginUsername.value.trim();
             const password = loginPassword.value;
             
-            // Validation
             if (!username || !password) {
-                showNotification('Please enter username and password', true);
+                showNotification('Please enter username and password', 'error');
                 return;
             }
             
-            // Show loading state
-            submitAuthBtn.disabled = true;
-            submitAuthBtn.innerHTML = '<span class="loading"></span> Logging in...';
+            // Check if the system is configured
+            if (!isConfigured) {
+                showNotification('System not configured. Please contact administrator.', 'error');
+                return;
+            }
             
-            try {
-                // Get users from cloud
-                const users = await getUsersFromCloud();
+            // Load users from database
+            loadUsersFromDb()
+                .then(users => {
+                    const user = users.find(u => u.username === username);
+                    
+                    if (!user) {
+                        showNotification('User not found', 'error');
+                        return;
+                    }
+                    
+                    // Simple password check (in a real app, use proper hashing)
+                    if (user.password !== password) {
+                        showNotification('Invalid password', 'error');
+                        return;
+                    }
+                    
+                    // Set current user
+                    currentUser = {
+                        username: user.username,
+                        email: user.email,
+                        realtimeGistId: user.realtimeGistId || ''
+                    };
+                    
+                    // Save to local storage
+                    localStorage.setItem('lorcanaCurrentUser', JSON.stringify(currentUser));
+                    
+                    // Check if user is admin
+                    isAdmin = username === 'admin';
+                    
+                    // Update UI
+                    updateAuthUI();
+                    closeAuthModal();
+                    
+                    // Load user's collection
+                    loadUserCollection();
+                    
+                    // Add activity
+                    addActivity(`${username} logged in`);
+                    
+                    showNotification('Login successful', 'success');
+                })
+                .catch(error => {
+                    showNotification('Error logging in: ' + error.message, 'error');
+                    console.error('Error logging in:', error);
+                });
+        }
+
+        // Handle registration
+        function handleRegister() {
+            const username = registerUsername.value.trim();
+            const email = registerEmail.value.trim();
+            const password = registerPassword.value;
+            const confirmPasswordVal = confirmPassword.value;
+            
+            if (!username || !email || !password) {
+                showNotification('Please fill in all fields', 'error');
+                return;
+            }
+            
+            if (password !== confirmPasswordVal) {
+                showNotification('Passwords do not match', 'error');
+                return;
+            }
+            
+            // Check if the system is configured
+            if (!isConfigured) {
+                showNotification('System not configured. Please contact administrator.', 'error');
+                return;
+            }
+            
+            // Load users from database
+            loadUsersFromDb()
+                .then(users => {
+                    // Check if username already exists
+                    if (users.find(u => u.username === username)) {
+                        showNotification('Username already exists', 'error');
+                        return;
+                    }
+                    
+                    // Create new user
+                    const newUser = {
+                        username: username,
+                        email: email,
+                        password: password, // In a real app, hash this password
+                        createdAt: new Date().toISOString(),
+                        lastActivity: new Date().toISOString(),
+                        realtimeGistId: '' // Will be set when user first saves to cloud
+                    };
+                    
+                    // Add user to database
+                    users.push(newUser);
+                    
+                    return saveUsersToDb(users);
+                })
+                .then(() => {
+                    // Set current user
+                    currentUser = {
+                        username: username,
+                        email: email,
+                        realtimeGistId: ''
+                    };
+                    
+                    // Save to local storage
+                    localStorage.setItem('lorcanaCurrentUser', JSON.stringify(currentUser));
+                    
+                    // Update UI
+                    updateAuthUI();
+                    closeAuthModal();
+                    
+                    // Initialize user's collection
+                    cards = [...initialCards];
+                    filteredCards = [...cards];
+                    renderTable();
+                    updateStats();
+                    
+                    // Save initial data to local storage
+                    saveDataToLocalStorage();
+                    
+                    // Add activity
+                    addActivity(`${username} registered`);
+                    
+                    showNotification('Registration successful', 'success');
+                })
+                .catch(error => {
+                    showNotification('Error registering: ' + error.message, 'error');
+                    console.error('Error registering:', error);
+                });
+        }
+
+        // Logout user
+        function logoutUser() {
+            if (currentUser) {
+                const username = currentUser.username;
                 
-                // Find user
-                const hashedPassword = simpleHash(password);
-                const user = users.find(u => u.username === username && u.password === hashedPassword);
-                
-                if (!user) {
-                    showNotification('Invalid username or password', true);
-                    submitAuthBtn.disabled = false;
-                    submitAuthBtn.textContent = 'Login';
-                    return;
-                }
-                
-                // Log in the user
-                currentUser = user;
-                localStorage.setItem('lorcanaCurrentUser', JSON.stringify(user));
+                // Clear current user
+                currentUser = null;
+                isAdmin = false;
+                localStorage.removeItem('lorcanaCurrentUser');
                 
                 // Update UI
                 updateAuthUI();
-                closeAuthModal();
-                showNotification('Login successful!');
                 
-                // Log user activity
-                logUserActivity('login');
-                
-                // Load user's collection
-                if (currentView === 'my') {
-                    loadUserCollection();
-                }
-            } catch (error) {
-                showNotification(`Login failed: ${error.message}`, true);
-                console.error(error);
-            } finally {
-                submitAuthBtn.disabled = false;
-                submitAuthBtn.textContent = 'Login';
-            }
-        }
-
-        // Logout the current user
-        async function logoutUser() {
-            // Log user activity
-            await logUserActivity('logout');
-            
-            currentUser = null;
-            localStorage.removeItem('lorcanaCurrentUser');
-            updateAuthUI();
-            showNotification('Logged out successfully');
-            
-            // Switch to my collection view
-            switchView('my');
-        }
-
-        // Initialize user's collection
-        function initializeUserCollection() {
-            const userCollectionKey = `lorcanaCollection_${currentUser.id}`;
-            localStorage.setItem(userCollectionKey, JSON.stringify(cards));
-        }
-
-        // Load user's collection
-        function loadUserCollection() {
-            const userCollectionKey = `lorcanaCollection_${currentUser.id}`;
-            const savedData = localStorage.getItem(userCollectionKey);
-            
-            if (savedData) {
-                cards = JSON.parse(savedData);
+                // Reset to default card collection
+                cards = [...initialCards];
                 filteredCards = [...cards];
-                populateSetFilter();
-                renderTable();
-                updateStats();
-            }
-        }
-
-        // Load aggregated collection from all users
-        async function loadAggregatedCollection() {
-            try {
-                // Get all users from cloud
-                allUsers = await getUsersFromCloud();
-                
-                // Get real-time data
-                const realtimeData = await getRealtimeDataFromCloud();
-                const collections = realtimeData.collections || {};
-                
-                // Create a map to aggregate card data
-                const cardMap = new Map();
-                
-                // Process each user's collection
-                for (const user of allUsers) {
-                    const userCollectionKey = `lorcanaCollection_${user.id}`;
-                    const userCollection = JSON.parse(localStorage.getItem(userCollectionKey) || '[]');
-                    
-                    // Also check if collection is in real-time data
-                    const realtimeCollection = collections[user.id] || [];
-                    const mergedCollection = [...userCollection];
-                    
-                    // Merge with real-time data if available
-                    realtimeCollection.forEach(realtimeCard => {
-                        const existingCard = mergedCollection.find(c => 
-                            c.set === realtimeCard.set && c.card_number === realtimeCard.card_number
-                        );
-                        
-                        if (existingCard) {
-                            existingCard.normal = Math.max(existingCard.normal, realtimeCard.normal);
-                            existingCard.foil = Math.max(existingCard.foil, realtimeCard.foil);
-                        } else {
-                            mergedCollection.push({...realtimeCard});
-                        }
-                    });
-                    
-                    mergedCollection.forEach(card => {
-                        const key = `${card.set}-${card.card_number}`;
-                        
-                        if (cardMap.has(key)) {
-                            const existingCard = cardMap.get(key);
-                            existingCard.normal += card.normal;
-                            existingCard.foil += card.foil;
-                            existingCard.userCount = (existingCard.userCount || 0) + 1;
-                        } else {
-                            cardMap.set(key, {
-                                ...card,
-                                normal: card.normal,
-                                foil: card.foil,
-                                userCount: 1
-                            });
-                        }
-                    });
-                }
-                
-                // Convert map to array
-                aggregatedCards = Array.from(cardMap.values());
-                cards = aggregatedCards;
-                filteredCards = [...cards];
-                
-                // Update user stats
-                updateUserStats();
-            } catch (error) {
-                showNotification(`Error loading aggregated data: ${error.message}`, true);
-                console.error(error);
-            }
-        }
-
-        // Update user statistics table
-        function updateUserStats() {
-            userStatsTableBody.innerHTML = '';
-            
-            let totalCards = 0;
-            let totalNormal = 0;
-            let totalFoil = 0;
-            
-            // Get real-time data for user activities
-            const userActivities = {};
-            if (realtimeSettings.token && realtimeSettings.gistId) {
-                getRealtimeDataFromCloud().then(realtimeData => {
-                    const activities = realtimeData.userActivities || {};
-                    Object.keys(activities).forEach(userId => {
-                        userActivities[userId] = activities[userId];
-                    });
-                }).catch(error => {
-                    console.error('Error getting user activities:', error);
-                });
-            }
-            
-            allUsers.forEach(user => {
-                const userCollectionKey = `lorcanaCollection_${user.id}`;
-                const userCollection = JSON.parse(localStorage.getItem(userCollectionKey) || '[]');
-                
-                let userTotalNormal = 0;
-                let userTotalFoil = 0;
-                let userUniqueCards = 0;
-                
-                userCollection.forEach(card => {
-                    userTotalNormal += card.normal;
-                    userTotalFoil += card.foil;
-                    if (card.normal > 0 || card.foil > 0) {
-                        userUniqueCards++;
-                    }
-                });
-                
-                totalCards += userUniqueCards;
-                totalNormal += userTotalNormal;
-                totalFoil += userTotalFoil;
-                
-                // Check if user is online
-                const activity = userActivities[user.id];
-                const isOnline = activity && activity.isOnline && 
-                    (Date.now() - activity.lastActivity < 60000); // Active in last minute
-                
-                const lastActivity = activity ? new Date(activity.lastActivity) : null;
-                const lastActivityString = lastActivity ? 
-                    `${lastActivity.toLocaleDateString()} ${lastActivity.toLocaleTimeString()}` : 
-                    'Never';
-                
-                const row = document.createElement('tr');
-                if (isOnline) {
-                    row.classList.add('active-user');
-                }
-                
-                row.innerHTML = `
-                    <td>${user.username}</td>
-                    <td>${isOnline ? '<span style="color: var(--success-color);">● Online</span>' : '<span style="color: #6c757d;">● Offline</span>'}</td>
-                    <td>${userCollection.length}</td>
-                    <td>${userTotalNormal}</td>
-                    <td>${userTotalFoil}</td>
-                    <td>${userUniqueCards}</td>
-                    <td>${lastActivityString}</td>
-                `;
-                userStatsTableBody.appendChild(row);
-            });
-            
-            // Update all users stats
-            allUsersTotalEl.textContent = allUsers.length;
-            allUsersCardsEl.textContent = totalCards;
-            allUsersNormalEl.textContent = totalNormal;
-            allUsersFoilEl.textContent = totalFoil;
-        }
-
-        // Refresh user data
-        function refreshUserData() {
-            if (currentView === 'all') {
-                loadAggregatedCollection();
-                loadUserActivities();
-                applyFilters();
-                updateStats();
-                showNotification('User data refreshed!');
-            } else {
-                showNotification('Switch to All Users view to refresh data', true);
-            }
-        }
-
-        // Save user's collection
-        function saveUserCollection() {
-            if (!currentUser) return;
-            
-            const userCollectionKey = `lorcanaCollection_${currentUser.id}`;
-            localStorage.setItem(userCollectionKey, JSON.stringify(cards));
-        }
-
-        // Show notification
-        function showNotification(message, isError = false, duration = 3000) {
-            notification.textContent = message;
-            notification.classList.toggle('error', isError);
-            notification.classList.add('show');
-            
-            setTimeout(() => {
-                notification.classList.remove('show');
-            }, duration);
-        }
-
-        // Update cloud status
-        function updateCloudStatus() {
-            if (userDbSettings.token && userDbSettings.gistId && realtimeSettings.token && realtimeSettings.gistId) {
-                cloudStatusIndicator.classList.add('connected');
-                cloudStatusIndicator.classList.remove('error');
-                cloudStatusText.textContent = 'Connected to cloud storage';
-            } else {
-                cloudStatusIndicator.classList.remove('connected');
-                cloudStatusIndicator.classList.add('error');
-                cloudStatusText.textContent = 'Not connected to cloud storage';
-            }
-        }
-
-        // Save to cloud (GitHub Gist)
-        async function saveToCloud() {
-            if (!currentUser) {
-                showNotification('Please log in to use cloud storage', true);
-                return;
-            }
-            
-            try {
-                const data = {
-                    description: `Lorcana Card Collection - ${currentUser.username}`,
-                    public: false,
-                    files: {
-                        'lorcana-collection.json': {
-                            content: JSON.stringify(cards)
-                        }
-                    }
-                };
-                
-                // Create a new gist for each user's collection
-                const response = await fetch('https://api.github.com/gists', {
-                    method: 'POST',
-                    headers: {
-                        'Authorization': `token ${realtimeSettings.token}`,
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify(data)
-                });
-                
-                if (!response.ok) {
-                    throw new Error(`GitHub API error: ${response.status}`);
-                }
-                
-                const gistData = await response.json();
-                
-                // Update cloud status
-                updateCloudStatus();
-                
-                showNotification('Collection saved to cloud!');
-            } catch (error) {
-                showNotification(`Error saving to cloud: ${error.message}`, true);
-                console.error(error);
-            }
-        }
-
-        // Load from cloud (GitHub Gist)
-        async function loadFromCloud() {
-            if (!currentUser) {
-                showNotification('Please log in to use cloud storage', true);
-                return;
-            }
-            
-            try {
-                // Get user's gists
-                const response = await fetch('https://api.github.com/gists', {
-                    headers: {
-                        'Authorization': `token ${realtimeSettings.token}`
-                    }
-                });
-                
-                if (!response.ok) {
-                    throw new Error(`GitHub API error: ${response.status}`);
-                }
-                
-                const gists = await response.json();
-                
-                // Find the gist for this user
-                const userGist = gists.find(gist => 
-                    gist.description === `Lorcana Card Collection - ${currentUser.username}`
-                );
-                
-                if (!userGist) {
-                    showNotification('No saved collection found in cloud', true);
-                    return;
-                }
-                
-                const fileContent = userGist.files['lorcana-collection.json'].content;
-                const loadedCards = JSON.parse(fileContent);
-                
-                // Update cards
-                cards = loadedCards;
-                filteredCards = [...cards];
-                resetFilters();
-                populateSetFilter();
                 renderTable();
                 updateStats();
                 
-                // Save to user's local storage
-                saveUserCollection();
+                // Add activity
+                addActivity(`${username} logged out`);
                 
-                showNotification('Collection loaded from cloud!');
-            } catch (error) {
-                showNotification(`Error loading from cloud: ${error.message}`, true);
-                console.error(error);
+                showNotification('Logged out successfully', 'success');
             }
         }
 
-        // Populate set filter dropdown
-        function populateSetFilter() {
-            const sets = [...new Set(cards.map(card => card.set))].sort();
-            setFilter.innerHTML = '<option value="">All Sets</option>';
-            sets.forEach(set => {
-                const option = document.createElement('option');
-                option.value = set;
-                option.textContent = `Set ${set}`;
-                setFilter.appendChild(option);
-            });
+        // Open setup modal
+        function openSetupModal() {
+            setupModal.style.display = 'block';
+            
+            // Pre-fill with current settings
+            setupUserDbTokenInput.value = userDbSettings.token;
+            setupUserDbGistIdInput.value = userDbSettings.gistId;
+            setupRealtimeTokenInput.value = realtimeSettings.token;
+            setupRealtimeGistIdInput.value = realtimeSettings.gistId;
+            setupSyncIntervalInput.value = realtimeSettings.syncInterval;
         }
 
-        // Render the card table
-        function renderTable() {
-            cardTableBody.innerHTML = '';
+        // Close setup modal
+        function closeSetupModal() {
+            setupModal.style.display = 'none';
+        }
+
+        // Save setup
+        function saveSetup() {
+            const userDbToken = setupUserDbTokenInput.value.trim();
+            const userDbGistId = setupUserDbGistIdInput.value.trim();
+            const realtimeToken = setupRealtimeTokenInput.value.trim();
+            const realtimeGistId = setupRealtimeGistIdInput.value.trim();
+            const syncInterval = parseInt(setupSyncIntervalInput.value);
             
-            if (filteredCards.length === 0) {
-                const row = document.createElement('tr');
-                row.innerHTML = '<td colspan="8" style="text-align: center;">No cards found. Try adjusting your filters or uploading a new CSV file.</td>';
-                cardTableBody.appendChild(row);
+            if (!userDbToken || !realtimeToken) {
+                showNotification('Please fill in all token fields', 'error');
                 return;
             }
             
-            filteredCards.forEach(card => {
-                const row = document.createElement('tr');
-                
-                // Combine colors if needed
-                const colorClass = `color-${card.color_1.toLowerCase()}`;
-                const colorText = card.color_2 ? `${card.color_1}/${card.color_2}` : card.color_1;
-                
-                // Rarity class for styling
-                const rarityClass = `rarity ${card.rarity.toLowerCase().replace(' ', '-')}`;
-                
-                // For all users view, show additional info
-                let additionalInfo = '';
-                if (currentView === 'all' && card.userCount) {
-                    additionalInfo = ` <small>(${card.userCount} user${card.userCount > 1 ? 's' : ''})</small>`;
-                }
-                
-                row.innerHTML = `
-                    <td>${card.name}</td>
-                    <td>${card.subtitle}</td>
-                    <td>${card.set}</td>
-                    <td>${card.card_number}</td>
-                    <td class="${colorClass}">${colorText}</td>
-                    <td class="${rarityClass}">${card.rarity}</td>
-                    <td><input type="number" min="0" class="count-input" data-id="${card.set}-${card.card_number}" data-type="normal" value="${card.normal}" ${!currentUser || currentView === 'all' ? 'disabled' : ''}>${additionalInfo}</td>
-                    <td><input type="number" min="0" class="count-input" data-id="${card.set}-${card.card_number}" data-type="foil" value="${card.foil}" ${!currentUser || currentView === 'all' ? 'disabled' : ''}></td>
-                `;
-                
-                cardTableBody.appendChild(row);
-            });
+            // Save settings
+            userDbSettings.token = userDbToken;
+            userDbSettings.gistId = userDbGistId;
+            realtimeSettings.token = realtimeToken;
+            realtimeSettings.gistId = realtimeGistId;
+            realtimeSettings.syncInterval = syncInterval;
             
-            // Add event listeners to count inputs
-            document.querySelectorAll('.count-input:not([disabled])').forEach(input => {
-                input.addEventListener('change', handleCountChange);
-            });
-        }
-
-        // Handle count changes
-        async function handleCountChange(event) {
-            const input = event.target;
-            const id = input.dataset.id;
-            const type = input.dataset.type;
-            const value = parseInt(input.value) || 0;
+            // Save to local storage
+            localStorage.setItem('userDbToken', userDbToken);
+            localStorage.setItem('userDbGistId', userDbGistId);
+            localStorage.setItem('realtimeToken', realtimeToken);
+            localStorage.setItem('realtimeGistId', realtimeGistId);
+            localStorage.setItem('syncInterval', syncInterval.toString());
             
-            const [set, cardNumber] = id.split('-');
-            const card = cards.find(c => c.set === set && c.card_number === cardNumber);
+            // Update configuration status
+            checkConfiguration();
+            updateCloudStatus();
             
-            if (card) {
-                const oldValue = card[type];
-                card[type] = value;
-                
-                // Update UI
-                updateStats();
-                saveUserCollection();
-                
-                // If value changed, log activity and sync to real-time data
-                if (oldValue !== value) {
-                    await logUserActivity('update', { cardName: card.name, set: card.set, cardNumber: card.card_number });
-                    
-                    // Update real-time data
-                    if (realtimeSettings.token && currentUser) {
-                        try {
-                            const realtimeData = await getRealtimeDataFromCloud();
-                            
-                            if (!realtimeData.collections) {
-                                realtimeData.collections = {};
-                            }
-                            
-                            if (!realtimeData.collections[currentUser.id]) {
-                                realtimeData.collections[currentUser.id] = [];
-                            }
-                            
-                            // Find and update the card in real-time data
-                            const realtimeCard = realtimeData.collections[currentUser.id].find(c => 
-                                c.set === card.set && c.card_number === card.card_number
-                            );
-                            
-                            if (realtimeCard) {
-                                realtimeCard[type] = value;
-                            } else {
-                                realtimeCard.collections[currentUser.id].push({
-                                    name: card.name,
-                                    subtitle: card.subtitle,
-                                    set: card.set,
-                                    card_number: card.card_number,
-                                    color_1: card.color_1,
-                                    color_2: card.color_2,
-                                    rarity: card.rarity,
-                                    normal: card.normal,
-                                    foil: card.foil
-                                });
-                            }
-                            
-                            // Update last update time
-                            realtimeData.lastUpdate = Date.now();
-                            
-                            // Save to cloud
-                            await saveRealtimeDataToCloud(realtimeData);
-                        } catch (error) {
-                            console.error('Error updating real-time data:', error);
-                        }
-                    }
-                }
-            }
-        }
-
-        // Apply filters
-        function applyFilters() {
-            const nameValue = nameFilter.value.toLowerCase();
-            const subtitleValue = subtitleFilter.value.toLowerCase();
-            const setValue = setFilter.value;
-            const colorValue = colorFilter.value;
-            const rarityValue = rarityFilter.value;
-            
-            filteredCards = cards.filter(card => {
-                const nameMatch = card.name.toLowerCase().includes(nameValue);
-                const subtitleMatch = card.subtitle.toLowerCase().includes(subtitleValue);
-                const setMatch = !setValue || card.set === setValue;
-                const colorMatch = !colorValue || 
-                    card.color_1 === colorValue || 
-                    (card.color_2 && card.color_2 === colorValue) ||
-                    (card.color_1 === colorValue.split('/')[0] && card.color_2 === colorValue.split('/')[1]);
-                const rarityMatch = !rarityValue || card.rarity === rarityValue;
-                
-                return nameMatch && subtitleMatch && setMatch && colorMatch && rarityMatch;
-            });
-            
-            // Reapply current sort
-            if (sortColumn) {
-                handleSort(sortColumn, true);
-            } else {
-                renderTable();
-                updateStats();
-            }
-        }
-
-        // Handle sorting
-        function handleSort(column, keepDirection = false) {
-            if (!keepDirection && sortColumn === column) {
-                sortDirection = sortDirection === 'asc' ? 'desc' : 'asc';
-            } else if (!keepDirection) {
-                sortColumn = column;
-                sortDirection = 'asc';
+            // If user is logged in, restart real-time sync
+            if (currentUser) {
+                stopRealtimeSync();
+                startRealtimeSync();
             }
             
-            // Update header classes
-            document.querySelectorAll('.sortable').forEach(header => {
-                header.classList.remove('sort-asc', 'sort-desc');
-                if (header.dataset.column === column) {
-                    header.classList.add(sortDirection === 'asc' ? 'sort-asc' : 'sort-desc');
-                }
-            });
+            closeSetupModal();
+            showNotification('Configuration saved', 'success');
             
-            // Sort the cards
-            filteredCards.sort((a, b) => {
-                let aVal = a[column];
-                let bVal = b[column];
-                
-                // Handle numeric values
-                if (column === 'card_number') {
-                    aVal = parseInt(aVal);
-                    bVal = parseInt(bVal);
-                }
-                
-                if (aVal < bVal) return sortDirection === 'asc' ? -1 : 1;
-                if (aVal > bVal) return sortDirection === 'asc' ? 1 : -1;
-                return 0;
-            });
-            
-            renderTable();
-            updateStats();
+            // Add activity
+            addActivity('System configuration updated');
         }
 
-        // Reset filters
-        function resetFilters() {
-            nameFilter.value = '';
-            subtitleFilter.value = '';
-            setFilter.value = '';
-            colorFilter.value = '';
-            rarityFilter.value = '';
-            
-            filteredCards = [...cards];
-            renderTable();
-            updateStats();
-        }
-
-        // Update statistics
-        function updateStats() {
-            if (currentView === 'my') {
-                let totalNormal = 0;
-                let totalFoil = 0;
-                let uniqueCards = 0;
-                
-                filteredCards.forEach(card => {
-                    totalNormal += card.normal;
-                    totalFoil += card.foil;
-                    if (card.normal > 0 || card.foil > 0) {
-                        uniqueCards++;
-                    }
-                });
-                
-                totalCardsEl.textContent = filteredCards.length;
-                totalNormalEl.textContent = totalNormal;
-                totalFoilEl.textContent = totalFoil;
-                uniqueCardsEl.textContent = uniqueCards;
-            }
-        }
-
-        // Save data to localStorage
-        function saveData() {
-            if (!currentUser) return;
-            
-            saveUserCollection();
-            showNotification('Collection saved locally!');
-        }
-
-        // Load data from localStorage
-        function loadData() {
-            if (!currentUser) return;
-            
-            loadUserCollection();
-            showNotification('Collection loaded locally!');
-        }
-
-        // Handle CSV file upload
-        function handleFileUpload(event) {
-            const file = event.target.files[0];
-            if (!file) return;
-            
-            if (!currentUser) {
-                showNotification('Please log in to upload CSV files', true);
-                return;
-            }
-            
-            const reader = new FileReader();
-            reader.onload = function(e) {
-                try {
-                    const csv = e.target.result;
-                    
-                    // Show debug panel
-                    debugPanel.style.display = 'block';
-                    csvPreview.textContent = csv.substring(0, 1000) + (csv.length > 1000 ? '...' : '');
-                    
-                    // Try multiple parsing approaches
-                    let newCards = [];
-                    let debugText = '';
-                    
-                    // Approach 1: Split by newline and then by pipe
-                    debugText += '=== Approach 1: Split by newline and pipe ===\n';
-                    const lines1 = csv.split('\n');
-                    debugText += `Total lines: ${lines1.length}\n`;
-                    
-                    for (let i = 0; i < lines1.length; i++) {
-                        const line = lines1[i].trim();
-                        if (!line) continue;
-                        
-                        debugText += `Line ${i}: ${line.substring(0, 50)}...\n`;
-                        
-                        // Skip lines that don't look like data
-                        if (line.includes('{') && line.includes('}')) {
-                            debugText += `Skipping line ${i}: Contains curly braces (likely filename)\n`;
-                            continue;
-                        }
-                        
-                        // Split by pipe
-                        const values = line.split(/\s*\|\s*/);
-                        debugText += `Values count: ${values.length}\n`;
-                        
-                        // Check if we have enough columns (at least 10)
-                        if (values.length < 10) {
-                            debugText += `Skipping line ${i}: Not enough columns\n`;
-                            continue;
-                        }
-                        
-                        // Check if the first value is a number (index)
-                        if (isNaN(parseInt(values[0]))) {
-                            debugText += `Skipping line ${i}: First value is not a number\n`;
-                            continue;
-                        }
-                        
-                        // Extract card data
-                        const card = {
-                            name: values[3],
-                            subtitle: values[4],
-                            set: values[5],
-                            card_number: values[6],
-                            color_1: values[7],
-                            color_2: values[8] || "",
-                            rarity: values[9],
-                            normal: 0,
-                            foil: 0
-                        };
-                        
-                        debugText += `Card extracted: ${JSON.stringify(card)}\n`;
-                        newCards.push(card);
-                    }
-                    
-                    // If approach 1 didn't work, try approach 2
-                    if (newCards.length === 0) {
-                        debugText += '\n=== Approach 2: Split by comma ===\n';
-                        const lines2 = csv.split('\n');
-                        
-                        for (let i = 0; i < lines2.length; i++) {
-                            const line = lines2[i].trim();
-                            if (!line) continue;
-                            
-                            debugText += `Line ${i}: ${line.substring(0, 50)}...\n`;
-                            
-                            // Skip header lines
-                            if (line.toLowerCase().includes('name') || line.includes('{')) {
-                                debugText += `Skipping line ${i}: Likely header\n`;
-                                continue;
-                            }
-                            
-                            // Split by comma
-                            const values = line.split(/\s*,\s*/);
-                            debugText += `Values count: ${values.length}\n`;
-                            
-                            // Check if we have enough columns (at least 7)
-                            if (values.length < 7) {
-                                debugText += `Skipping line ${i}: Not enough columns\n`;
-                                continue;
-                            }
-                            
-                            // Extract card data (adjust indices based on expected format)
-                            const card = {
-                                name: values[0],
-                                subtitle: values[1],
-                                set: values[2],
-                                card_number: values[3],
-                                color_1: values[4],
-                                color_2: values[5] || "",
-                                rarity: values[6],
-                                normal: 0,
-                                foil: 0
-                            };
-                            
-                            debugText += `Card extracted: ${JSON.stringify(card)}\n`;
-                            newCards.push(card);
-                        }
-                    }
-                    
-                    // If approach 2 didn't work, try approach 3
-                    if (newCards.length === 0) {
-                        debugText += '\n=== Approach 3: Split by tab ===\n';
-                        const lines3 = csv.split('\n');
-                        
-                        for (let i = 0; i < lines3.length; i++) {
-                            const line = lines3[i].trim();
-                            if (!line) continue;
-                            
-                            debugText += `Line ${i}: ${line.substring(0, 50)}...\n`;
-                            
-                            // Skip header lines
-                            if (line.toLowerCase().includes('name') || line.includes('{')) {
-                                debugText += `Skipping line ${i}: Likely header\n`;
-                                continue;
-                            }
-                            
-                            // Split by tab
-                            const values = line.split(/\s*\t\s*/);
-                            debugText += `Values count: ${values.length}\n`;
-                            
-                            // Check if we have enough columns (at least 7)
-                            if (values.length < 7) {
-                                debugText += `Skipping line ${i}: Not enough columns\n`;
-                                continue;
-                            }
-                            
-                            // Extract card data (adjust indices based on expected format)
-                            const card = {
-                                name: values[0],
-                                subtitle: values[1],
-                                set: values[2],
-                                card_number: values[3],
-                                color_1: values[4],
-                                color_2: values[5] || "",
-                                rarity: values[6],
-                                normal: 0,
-                                foil: 0
-                            };
-                            
-                            debugText += `Card extracted: ${JSON.stringify(card)}\n`;
-                            newCards.push(card);
-                        }
-                    }
-                    
-                    // Display debug info
-                    debugInfo.textContent = debugText;
-                    
-                    if (newCards.length > 0) {
-                        // Preserve existing counts for cards that are already in the collection
-                        const existingCardsMap = {};
-                        cards.forEach(card => {
-                            const key = `${card.set}-${card.card_number}`;
-                            existingCardsMap[key] = {
-                                normal: card.normal,
-                                foil: card.foil
-                            };
-                        });
-                        
-                        // Update counts for existing cards
-                        newCards.forEach(card => {
-                            const key = `${card.set}-${card.card_number}`;
-                            if (existingCardsMap[key]) {
-                                card.normal = existingCardsMap[key].normal;
-                                card.foil = existingCardsMap[key].foil;
-                            }
-                        });
-                        
-                        cards = newCards;
-                        filteredCards = [...cards];
-                        resetFilters();
-                        populateSetFilter();
-                        renderTable();
-                        updateStats();
-                        saveUserCollection();
-                        showNotification(`Successfully loaded ${newCards.length} cards!`);
-                    } else {
-                        showNotification('No valid cards found in the CSV file. Check the debug panel for details.', true);
-                    }
-                } catch (error) {
-                    showNotification('Error parsing CSV file. Please check the debug panel for details.', true);
-                    debugInfo.textContent = `Error: ${error.message}\n\nStack: ${error.stack}`;
-                    debugPanel.style.display = 'block';
-                }
-                
-                // Reset the file input
-                event.target.value = '';
-            };
-            
-            reader.readAsText(file);
-        }
-
-        // Initialize the app when DOM is loaded
+        // Initialize the app when the DOM is loaded
         document.addEventListener('DOMContentLoaded', init);
     </script>
 </body>
