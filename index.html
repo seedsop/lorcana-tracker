@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Lorcana Card Tracker</title>
     <style>
-        /* 保持原有样式不变 */
+        /* Keeping all existing styles unchanged */
         :root {
             --primary-color: #4a6fa5;
             --secondary-color: #166088;
@@ -1125,14 +1125,49 @@
         const registerPassword = document.getElementById('registerPassword');
         const confirmPassword = document.getElementById('confirmPassword');
 
+        // Check if the tracker is configured
+        async function checkConfiguration() {
+            try {
+                // Try to load configuration from the user database
+                const users = await loadUsersFromDb();
+                // Look for a configuration entry (we'll use a special user for configuration)
+                const configUser = users.find(u => u.username === '__system_config__');
+                
+                if (configUser && configUser.config) {
+                    // Configuration exists
+                    userDbSettings = configUser.config.userDbSettings;
+                    realtimeSettings = configUser.config.realtimeSettings;
+                    
+                    // Also save to local storage for future use
+                    localStorage.setItem('userDbToken', userDbSettings.token);
+                    localStorage.setItem('userDbGistId', userDbSettings.gistId);
+                    localStorage.setItem('realtimeToken', realtimeSettings.token);
+                    localStorage.setItem('realtimeGistId', realtimeSettings.gistId);
+                    localStorage.setItem('syncInterval', realtimeSettings.syncInterval.toString());
+                    
+                    isConfigured = true;
+                    setupSection.style.display = 'none';
+                } else {
+                    // Configuration doesn't exist
+                    isConfigured = false;
+                    setupSection.style.display = 'block';
+                }
+            } catch (error) {
+                console.error('Error checking configuration:', error);
+                isConfigured = false;
+                setupSection.style.display = 'block';
+            }
+            
+            updateCloudStatus();
+        }
+
         // Initialize the app
-        function init() {
-            checkConfiguration();
+        async function init() {
+            await checkConfiguration();
             checkAuthStatus();
             populateSetFilter();
             renderTable();
             updateStats();
-            updateCloudStatus();
             
             // Event listeners
             nameFilter.addEventListener('input', applyFilters);
@@ -1194,17 +1229,6 @@
                     handleSort(column);
                 });
             });
-        }
-
-        // Check if the tracker is configured
-        function checkConfiguration() {
-            isConfigured = !!(userDbSettings.token && realtimeSettings.token);
-            
-            if (isConfigured) {
-                setupSection.style.display = 'none';
-            } else {
-                setupSection.style.display = 'block';
-            }
         }
 
         // Switch between views
@@ -2364,7 +2388,7 @@
         }
 
         // Save setup
-        function saveSetup() {
+        async function saveSetup() {
             const userDbToken = setupUserDbTokenInput.value.trim();
             const userDbGistId = setupUserDbGistIdInput.value.trim();
             const realtimeToken = setupRealtimeTokenInput.value.trim();
@@ -2376,12 +2400,18 @@
                 return;
             }
             
-            // Save settings
-            userDbSettings.token = userDbToken;
-            userDbSettings.gistId = userDbGistId;
-            realtimeSettings.token = realtimeToken;
-            realtimeSettings.gistId = realtimeGistId;
-            realtimeSettings.syncInterval = syncInterval;
+            // Update settings
+            userDbSettings = {
+                token: userDbToken,
+                gistId: userDbGistId
+            };
+            realtimeSettings = {
+                token: realtimeToken,
+                gistId: realtimeGistId,
+                syncInterval: syncInterval,
+                lastSync: 0,
+                syncTimer: null
+            };
             
             // Save to local storage
             localStorage.setItem('userDbToken', userDbToken);
@@ -2390,21 +2420,49 @@
             localStorage.setItem('realtimeGistId', realtimeGistId);
             localStorage.setItem('syncInterval', syncInterval.toString());
             
-            // Update configuration status
-            checkConfiguration();
-            updateCloudStatus();
-            
-            // If user is logged in, restart real-time sync
-            if (currentUser) {
-                stopRealtimeSync();
-                startRealtimeSync();
+            try {
+                // Load existing users
+                const users = await loadUsersFromDb();
+                
+                // Create or update configuration entry
+                const configIndex = users.findIndex(u => u.username === '__system_config__');
+                const configEntry = {
+                    username: '__system_config__',
+                    config: {
+                        userDbSettings: userDbSettings,
+                        realtimeSettings: realtimeSettings
+                    }
+                };
+                
+                if (configIndex !== -1) {
+                    users[configIndex] = configEntry;
+                } else {
+                    users.push(configEntry);
+                }
+                
+                // Save users back to database
+                await saveUsersToDb(users);
+                
+                // Update configuration status
+                isConfigured = true;
+                setupSection.style.display = 'none';
+                updateCloudStatus();
+                
+                // If user is logged in, restart real-time sync
+                if (currentUser) {
+                    stopRealtimeSync();
+                    startRealtimeSync();
+                }
+                
+                closeSetupModal();
+                showNotification('Configuration saved', 'success');
+                
+                // Add activity
+                addActivity('System configuration updated');
+            } catch (error) {
+                showNotification('Error saving configuration: ' + error.message, 'error');
+                console.error('Error saving configuration:', error);
             }
-            
-            closeSetupModal();
-            showNotification('Configuration saved', 'success');
-            
-            // Add activity
-            addActivity('System configuration updated');
         }
 
         // Initialize the app when the DOM is loaded
