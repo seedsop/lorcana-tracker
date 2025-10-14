@@ -119,6 +119,12 @@
             border-radius: 20px;
             font-size: 14px;
             color: #2e7d32;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+
+        .real-time-status:hover {
+            background-color: #c8e6c9;
         }
 
         .real-time-status .sync-icon {
@@ -786,6 +792,7 @@
                 <button id="saveCloud" class="success-btn" disabled>Save to Cloud</button>
                 <button id="loadCloud" class="secondary-btn" disabled>Load from Cloud</button>
                 <button id="refreshUsers" class="info-btn">Refresh Users</button>
+                <button id="realtimeSettingsBtn" class="info-btn">Real-time Settings</button>
             </div>
         </div>
         
@@ -1099,6 +1106,7 @@
         const saveCloudBtn = document.getElementById('saveCloud');
         const loadCloudBtn = document.getElementById('loadCloud');
         const refreshUsersBtn = document.getElementById('refreshUsers');
+        const realtimeSettingsBtn = document.getElementById('realtimeSettingsBtn');
         const csvFileInput = document.getElementById('csvFile');
         const totalCardsEl = document.getElementById('totalCards');
         const totalNormalEl = document.getElementById('totalNormal');
@@ -1180,10 +1188,14 @@
             saveCloudBtn.addEventListener('click', openCloudSettings);
             loadCloudBtn.addEventListener('click', openCloudSettings);
             refreshUsersBtn.addEventListener('click', refreshUserData);
+            realtimeSettingsBtn.addEventListener('click', openRealtimeSettings);
             csvFileInput.addEventListener('change', handleFileUpload);
             closeDebugBtn.addEventListener('click', () => {
                 debugPanel.style.display = 'none';
             });
+            
+            // Add click event listener to real-time status
+            realTimeStatus.addEventListener('click', openRealtimeSettings);
             
             // View tab event listeners
             myCollectionTab.addEventListener('click', () => switchView('my'));
@@ -2423,7 +2435,7 @@
                 
                 // If value changed, log activity and sync to real-time data
                 if (oldValue !== value) {
-                    await logUserActivity('update', { cardName: card.name, set: card.set, cardNumber: card.cardNumber });
+                    await logUserActivity('update', { cardName: card.name, set: card.set, cardNumber: card.card_number });
                     
                     // Update real-time data
                     if (realtimeSettings.token && currentUser) {
