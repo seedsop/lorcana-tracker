@@ -897,11 +897,17 @@
             </div>
         </div>
         
-        <div id="setupSection" class="setup-section">
+        <div id="setupSection" class="setup-section" style="display: none;">
             <h3>Administrator Setup</h3>
-            <p>This tracker needs to be configured by an administrator before users can register and login.</p>
-            <p>Administrators need to create a GitHub Personal Access Token to store user data and enable real-time synchronization.</p>
-            <button id="setupBtn" class="success-btn">Configure Tracker</button>
+            <div id="setupMessage" style="display: none;">
+                <p>This tracker needs to be configured by an administrator before users can register and login.</p>
+                <p>Please contact the administrator to configure the system.</p>
+            </div>
+            <div id="setupForm" style="display: none;">
+                <p>This tracker needs to be configured by an administrator before users can register and login.</p>
+                <p>Administrators need to create a GitHub Personal Access Token to store user data and enable real-time synchronization.</p>
+                <button id="setupBtn" class="success-btn">Configure Tracker</button>
+            </div>
         </div>
         
         <div id="debugPanel" class="debug-panel">
@@ -1089,6 +1095,8 @@
         const activitySection = document.getElementById('activitySection');
         const activityFeed = document.getElementById('activityFeed');
         const setupSection = document.getElementById('setupSection');
+        const setupMessage = document.getElementById('setupMessage');
+        const setupForm = document.getElementById('setupForm');
         const setupBtn = document.getElementById('setupBtn');
         const notification = document.getElementById('notification');
         const debugPanel = document.getElementById('debugPanel');
@@ -1153,11 +1161,29 @@
                     // Configuration doesn't exist
                     isConfigured = false;
                     setupSection.style.display = 'block';
+                    
+                    // Show appropriate setup section based on login status
+                    if (currentUser && currentUser.username === 'admin') {
+                        setupMessage.style.display = 'none';
+                        setupForm.style.display = 'block';
+                    } else {
+                        setupMessage.style.display = 'block';
+                        setupForm.style.display = 'none';
+                    }
                 }
             } catch (error) {
                 console.error('Error checking configuration:', error);
                 isConfigured = false;
                 setupSection.style.display = 'block';
+                
+                // Show appropriate setup section based on login status
+                if (currentUser && currentUser.username === 'admin') {
+                    setupMessage.style.display = 'none';
+                    setupForm.style.display = 'block';
+                } else {
+                    setupMessage.style.display = 'block';
+                    setupForm.style.display = 'none';
+                }
             }
             
             updateCloudStatus();
@@ -1274,12 +1300,16 @@
         // Check authentication status
         function checkAuthStatus() {
             const userData = localStorage.getItem('lorcanaCurrentUser');
-            if (userData && isConfigured) {
+            if (userData) {
                 currentUser = JSON.parse(userData);
                 // Check if user is admin
                 isAdmin = currentUser.username === 'admin';
                 updateAuthUI();
-                startRealtimeSync();
+                
+                // Start real-time sync if configured
+                if (isConfigured) {
+                    startRealtimeSync();
+                }
             } else {
                 currentUser = null;
                 isAdmin = false;
@@ -1290,7 +1320,7 @@
 
         // Update authentication UI
         function updateAuthUI() {
-            if (currentUser && isConfigured) {
+            if (currentUser) {
                 // User is logged in
                 userInfo.innerHTML = `
                     <div class="user-avatar">${currentUser.username.charAt(0).toUpperCase()}</div>
@@ -1307,8 +1337,12 @@
                 loadCloudBtn.disabled = false;
                 viewOnlyMessage.style.display = 'none';
                 
-                // Show real-time status
-                realTimeStatus.style.display = 'flex';
+                // Show real-time status if configured
+                if (isConfigured) {
+                    realTimeStatus.style.display = 'flex';
+                } else {
+                    realTimeStatus.style.display = 'none';
+                }
                 
                 // Show/hide CSV upload based on admin status
                 if (isAdmin) {
@@ -1356,6 +1390,20 @@
                     renderTable();
                     updateStats();
                 }
+            }
+            
+            // Update setup section visibility based on configuration and admin status
+            if (!isConfigured) {
+                setupSection.style.display = 'block';
+                if (currentUser && currentUser.username === 'admin') {
+                    setupMessage.style.display = 'none';
+                    setupForm.style.display = 'block';
+                } else {
+                    setupMessage.style.display = 'block';
+                    setupForm.style.display = 'none';
+                }
+            } else {
+                setupSection.style.display = 'none';
             }
         }
 
@@ -2240,57 +2288,98 @@
                 return;
             }
             
-            // Check if the system is configured
-            if (!isConfigured) {
+            // Allow admin to login even if system is not configured
+            if (!isConfigured && username !== 'admin') {
                 showNotification('System not configured. Please contact administrator.', 'error');
                 return;
             }
             
-            // Load users from database
-            loadUsersFromDb()
-                .then(users => {
-                    const user = users.find(u => u.username === username);
-                    
-                    if (!user) {
-                        showNotification('User not found', 'error');
-                        return;
-                    }
-                    
-                    // Simple password check (in a real app, use proper hashing)
-                    if (user.password !== password) {
-                        showNotification('Invalid password', 'error');
-                        return;
-                    }
-                    
-                    // Set current user
-                    currentUser = {
-                        username: user.username,
-                        email: user.email,
-                        realtimeGistId: user.realtimeGistId || ''
-                    };
-                    
-                    // Save to local storage
-                    localStorage.setItem('lorcanaCurrentUser', JSON.stringify(currentUser));
-                    
-                    // Check if user is admin
-                    isAdmin = username === 'admin';
-                    
-                    // Update UI
-                    updateAuthUI();
-                    closeAuthModal();
-                    
-                    // Load user's collection
-                    loadUserCollection();
-                    
-                    // Add activity
-                    addActivity(`${username} logged in`);
-                    
-                    showNotification('Login successful', 'success');
-                })
-                .catch(error => {
-                    showNotification('Error logging in: ' + error.message, 'error');
-                    console.error('Error logging in:', error);
-                });
+            // Load users from database if system is configured or user is admin
+            if (isConfigured || username === 'admin') {
+                loadUsersFromDb()
+                    .then(users => {
+                        // If system is not configured and user is admin, check if admin exists in localStorage
+                        if (!isConfigured && username === 'admin') {
+                            const localAdminData = localStorage.getItem('lorcanaAdminData');
+                            if (localAdminData) {
+                                const adminData = JSON.parse(localAdminData);
+                                if (adminData.password === password) {
+                                    // Set current user as admin
+                                    currentUser = {
+                                        username: username,
+                                        email: adminData.email || 'admin@example.com',
+                                        realtimeGistId: adminData.realtimeGistId || ''
+                                    };
+                                    
+                                    // Save to local storage
+                                    localStorage.setItem('lorcanaCurrentUser', JSON.stringify(currentUser));
+                                    
+                                    // Check if user is admin
+                                    isAdmin = username === 'admin';
+                                    
+                                    // Update UI
+                                    updateAuthUI();
+                                    closeAuthModal();
+                                    
+                                    // Load user's collection
+                                    loadUserCollection();
+                                    
+                                    // Add activity
+                                    addActivity(`${username} logged in`);
+                                    
+                                    showNotification('Login successful', 'success');
+                                    return;
+                                }
+                            }
+                        }
+                        }
+                        
+                        const user = users.find(u => u.username === username);
+                        
+                        if (!user) {
+                            showNotification('User not found', 'error');
+                            return;
+                        }
+                        
+                        // Simple password check (in a real app, use proper hashing)
+                        if (user.password !== password) {
+                            showNotification('Invalid password', 'error');
+                            return;
+                        }
+                        
+                        // Set current user
+                        currentUser = {
+                            username: user.username,
+                            email: user.email,
+                            realtimeGistId: user.realtimeGistId || ''
+                        };
+                        
+                        // Save to local storage
+                        localStorage.setItem('lorcanaCurrentUser', JSON.stringify(currentUser));
+                        
+                        // Check if user is admin
+                        isAdmin = username === 'admin';
+                        
+                        // Update UI
+                        updateAuthUI();
+                        closeAuthModal();
+                        
+                        // Load user's collection
+                        loadUserCollection();
+                        
+                        // Add activity
+                        addActivity(`${username} logged in`);
+                        
+                        showNotification('Login successful', 'success');
+                    })
+                    .catch(error => {
+                        showNotification('Error logging in: ' + error.message, 'error');
+                        console.error('Error logging in:', error);
+                    });
+            } else {
+                // System not configured and user is not admin
+                showNotification('System not configured. Please contact administrator.', 'error');
+            }
         }
 
         // Handle registration
@@ -2310,69 +2399,120 @@
                 return;
             }
             
-            // Check if the system is configured
-            if (!isConfigured) {
+            // Allow admin to register even if system is not configured
+            if (!isConfigured && username !== 'admin') {
                 showNotification('System not configured. Please contact administrator.', 'error');
                 return;
             }
             
-            // Load users from database
-            loadUsersFromDb()
-                .then(users => {
-                    // Check if username already exists
-                    if (users.find(u => u.username === username)) {
-                        showNotification('Username already exists', 'error');
-                        return;
-                    }
-                    
-                    // Create new user
-                    const newUser = {
-                        username: username,
-                        email: email,
-                        password: password, // In a real app, hash this password
-                        createdAt: new Date().toISOString(),
-                        lastActivity: new Date().toISOString(),
-                        realtimeGistId: '' // Will be set when user first saves to cloud
-                    };
-                    
-                    // Add user to database
-                    users.push(newUser);
-                    
-                    return saveUsersToDb(users);
-                })
-                .then(() => {
-                    // Set current user
-                    currentUser = {
-                        username: username,
-                        email: email,
-                        realtimeGistId: ''
-                    };
-                    
-                    // Save to local storage
-                    localStorage.setItem('lorcanaCurrentUser', JSON.stringify(currentUser));
-                    
-                    // Update UI
-                    updateAuthUI();
-                    closeAuthModal();
-                    
-                    // Initialize user's collection
-                    cards = [...initialCards];
-                    filteredCards = [...cards];
-                    renderTable();
-                    updateStats();
-                    
-                    // Save initial data to local storage
-                    saveDataToLocalStorage();
-                    
-                    // Add activity
-                    addActivity(`${username} registered`);
-                    
-                    showNotification('Registration successful', 'success');
-                })
-                .catch(error => {
-                    showNotification('Error registering: ' + error.message, 'error');
-                    console.error('Error registering:', error);
-                });
+            // If user is admin and system is not configured, create admin in localStorage
+            if (!isConfigured && username === 'admin') {
+                // Create admin user in localStorage
+                const adminData = {
+                    username: username,
+                    email: email,
+                    password: password,
+                    createdAt: new Date().toISOString(),
+                    lastActivity: new Date().toISOString(),
+                    realtimeGistId: ''
+                };
+                
+                localStorage.setItem('lorcanaAdminData', JSON.stringify(adminData));
+                
+                // Set current user
+                currentUser = {
+                    username: username,
+                    email: email,
+                    realtimeGistId: ''
+                };
+                
+                // Save to local storage
+                localStorage.setItem('lorcanaCurrentUser', JSON.stringify(currentUser));
+                
+                // Check if user is admin
+                isAdmin = username === 'admin';
+                
+                // Update UI
+                updateAuthUI();
+                closeAuthModal();
+                
+                // Initialize user's collection
+                cards = [...initialCards];
+                filteredCards = [...cards];
+                renderTable();
+                updateStats();
+                
+                // Save initial data to local storage
+                saveDataToLocalStorage();
+                
+                // Add activity
+                addActivity(`${username} registered`);
+                
+                showNotification('Registration successful', 'success');
+                return;
+            }
+            
+            // Load users from database if system is configured
+            if (isConfigured) {
+                loadUsersFromDb()
+                    .then(users => {
+                        // Check if username already exists
+                        if (users.find(u => u.username === username)) {
+                            showNotification('Username already exists', 'error');
+                            return;
+                        }
+                        
+                        // Create new user
+                        const newUser = {
+                            username: username,
+                            email: email,
+                            password: password, // In a real app, hash this password
+                            createdAt: new Date().toISOString(),
+                            lastActivity: new Date().toISOString(),
+                            realtimeGistId: '' // Will be set when user first saves to cloud
+                        };
+                        
+                        // Add user to database
+                        users.push(newUser);
+                        
+                        return saveUsersToDb(users);
+                    })
+                    .then(() => {
+                        // Set current user
+                        currentUser = {
+                            username: username,
+                            email: email,
+                            realtimeGistId: ''
+                        };
+                        
+                        // Save to local storage
+                        localStorage.setItem('lorcanaCurrentUser', JSON.stringify(currentUser));
+                        
+                        // Update UI
+                        updateAuthUI();
+                        closeAuthModal();
+                        
+                        // Initialize user's collection
+                        cards = [...initialCards];
+                        filteredCards = [...cards];
+                        renderTable();
+                        updateStats();
+                        
+                        // Save initial data to local storage
+                        saveDataToLocalStorage();
+                        
+                        // Add activity
+                        addActivity(`${username} registered`);
+                        
+                        showNotification('Registration successful', 'success');
+                    })
+                    .catch(error => {
+                        showNotification('Error registering: ' + error.message, 'error');
+                        console.error('Error registering:', error);
+                    });
+            } else {
+                showNotification('System not configured. Please contact administrator.', 'error');
+            }
         }
 
         // Logout user
