@@ -692,6 +692,23 @@
             margin-bottom: 15px;
         }
 
+        .reconfigure-section {
+            margin-top: 20px;
+            padding: 15px;
+            background-color: #e7f3fe;
+            border-radius: 8px;
+            text-align: center;
+        }
+
+        .reconfigure-section h3 {
+            margin-top: 0;
+            color: #0c5460;
+        }
+
+        .reconfigure-section p {
+            margin-bottom: 15px;
+        }
+
         @keyframes spin {
             to { transform: rotate(360deg); }
         }
@@ -929,6 +946,13 @@
             <button id="firstTimeSetupBtn" class="success-btn">Register as Admin</button>
         </div>
         
+        <div id="reconfigureSection" class="reconfigure-section" style="display: none;">
+            <h3>System Configuration Required</h3>
+            <p>This system has been configured, but you need to provide the GitHub tokens to access it.</p>
+            <p>Please enter the tokens to connect to the existing configuration.</p>
+            <button id="reconfigureBtn" class="success-btn">Enter Configuration Tokens</button>
+        </div>
+        
         <div id="debugPanel" class="debug-panel">
             <h3>Debug Information</h3>
             <div id="csvPreview" class="csv-preview"></div>
@@ -1064,13 +1088,13 @@
         let sortColumn = null;
         let sortDirection = 'asc';
         let userDbSettings = {
-            token: localStorage.getItem('userDbToken') || '',
-            gistId: localStorage.getItem('userDbGistId') || ''
+            token: '',
+            gistId: ''
         };
         let realtimeSettings = {
-            token: localStorage.getItem('realtimeToken') || '',
-            gistId: localStorage.getItem('realtimeGistId') || '',
-            syncInterval: parseInt(localStorage.getItem('syncInterval') || '10'),
+            token: '',
+            gistId: '',
+            syncInterval: 10,
             lastSync: 0,
             syncTimer: null
         };
@@ -1083,6 +1107,7 @@
         let isConfigured = false;
         let isAdmin = false; // Track if current user is admin
         let isFirstTime = true; // Track if this is the first time setup
+        let publicConfigGistId = ''; // ID of the public configuration gist
 
         // DOM elements
         const cardTableBody = document.getElementById('cardTableBody');
@@ -1117,6 +1142,8 @@
         const setupBtn = document.getElementById('setupBtn');
         const firstTimeSetupSection = document.getElementById('firstTimeSetupSection');
         const firstTimeSetupBtn = document.getElementById('firstTimeSetupBtn');
+        const reconfigureSection = document.getElementById('reconfigureSection');
+        const reconfigureBtn = document.getElementById('reconfigureBtn');
         const notification = document.getElementById('notification');
         const debugPanel = document.getElementById('debugPanel');
         const debugInfo = document.getElementById('debugInfo');
@@ -1157,38 +1184,51 @@
         // Check if the tracker is configured
         async function checkConfiguration() {
             try {
-                // Try to load configuration from the user database
-                const users = await loadUsersFromDb();
-                // Look for a configuration entry (we'll use a special user for configuration)
-                const configUser = users.find(u => u.username === '__system_config__');
+                // Try to load the public configuration gist
+                // We'll use a fixed gist ID for the public configuration
+                // In a real implementation, this could be stored in a central location or discovered through other means
+                const publicConfigGistId = 'YOUR_PUBLIC_CONFIG_GIST_ID'; // Replace with your actual public config gist ID
                 
-                if (configUser && configUser.config) {
-                    // Configuration exists
-                    userDbSettings = configUser.config.userDbSettings;
-                    realtimeSettings = configUser.config.realtimeSettings;
+                if (publicConfigGistId) {
+                    const configResponse = await fetch(`https://api.github.com/gists/${publicConfigGistId}`);
                     
-                    // Also save to local storage for future use
-                    localStorage.setItem('userDbToken', userDbSettings.token);
-                    localStorage.setItem('userDbGistId', userDbSettings.gistId);
-                    localStorage.setItem('realtimeToken', realtimeSettings.token);
-                    localStorage.setItem('realtimeGistId', realtimeSettings.gistId);
-                    localStorage.setItem('syncInterval', realtimeSettings.syncInterval.toString());
-                    
-                    isConfigured = true;
-                    isFirstTime = false;
-                } else {
-                    // Configuration doesn't exist
-                    isConfigured = false;
-                    isFirstTime = true;
+                    if (configResponse.ok) {
+                        const configGistData = await configResponse.json();
+                        const configFile = configGistData.files['config.json'];
+                        
+                        if (configFile) {
+                            const publicConfig = JSON.parse(configFile.content);
+                            
+                            if (publicConfig.configured) {
+                                // System is configured
+                                isConfigured = true;
+                                isFirstTime = false;
+                                
+                                // Store the gist IDs from the public config
+                                userDbSettings.gistId = publicConfig.userDbGistId;
+                                realtimeSettings.gistId = publicConfig.realtimeGistId;
+                                
+                                updateCloudStatus();
+                                updateSetupSectionVisibility();
+                                return;
+                            }
+                        }
+                    }
                 }
+                
+                // If we get here, either no public config was found or it indicates not configured
+                isConfigured = false;
+                isFirstTime = true;
+                
+                updateCloudStatus();
+                updateSetupSectionVisibility();
             } catch (error) {
                 console.error('Error checking configuration:', error);
                 isConfigured = false;
                 isFirstTime = true;
+                updateCloudStatus();
+                updateSetupSectionVisibility();
             }
-            
-            updateCloudStatus();
-            updateSetupSectionVisibility();
         }
 
         // Update setup section visibility based on user status
@@ -1203,8 +1243,14 @@
             // Show first-time setup section if this is the first time and no admin exists
             if (isFirstTime) {
                 firstTimeSetupSection.style.display = 'block';
+                reconfigureSection.style.display = 'none';
+            } else if (isConfigured && !userDbSettings.token) {
+                // System is configured but we don't have tokens
+                firstTimeSetupSection.style.display = 'none';
+                reconfigureSection.style.display = 'block';
             } else {
                 firstTimeSetupSection.style.display = 'none';
+                reconfigureSection.style.display = 'none';
             }
         }
 
@@ -1242,6 +1288,14 @@
                 switchAuthMode('register');
                 // Pre-fill admin username
                 registerUsername.value = 'admin';
+            });
+            
+            // Reconfigure button event listener
+            reconfigureBtn.addEventListener('click', () => {
+                openAuthModal();
+                switchAuthMode('login');
+                // Pre-fill admin username
+                loginUsername.value = 'admin';
             });
             
             // View tab event listeners
@@ -1732,7 +1786,7 @@
                 return;
             }
             
-            if (!isConfigured) {
+            if (!isConfigured || !userDbSettings.token) {
                 showNotification('System is not configured for cloud storage', 'error');
                 return;
             }
@@ -1775,7 +1829,7 @@
                 return;
             }
             
-            if (!isConfigured) {
+            if (!isConfigured || !userDbSettings.token) {
                 showNotification('System is not configured for cloud storage', 'error');
                 return;
             }
@@ -1805,7 +1859,7 @@
 
         // Refresh user data
         async function refreshUserData() {
-            if (!isConfigured) {
+            if (!isConfigured || !userDbSettings.token) {
                 showNotification('System is not configured', 'warning');
                 return;
             }
@@ -1820,7 +1874,7 @@
 
         // Load all users data
         async function loadAllUsersData() {
-            if (!isConfigured) {
+            if (!isConfigured || !userDbSettings.token) {
                 allUsers = [];
                 return;
             }
@@ -1875,7 +1929,7 @@
 
         // Load activities from cloud
         async function loadActivities() {
-            if (!isConfigured || !realtimeSettings.gistId) {
+            if (!isConfigured || !realtimeSettings.gistId || !realtimeSettings.token) {
                 userActivities = [];
                 return;
             }
@@ -1906,19 +1960,12 @@
 
         // Load users from database
         async function loadUsersFromDb() {
-            if (!userDbSettings.token) {
+            if (!userDbSettings.token || !userDbSettings.gistId) {
                 return [];
             }
             
             try {
-                let gistId = userDbSettings.gistId;
-                
-                // If no gist ID, we'll create one later
-                if (!gistId) {
-                    return [];
-                }
-                
-                const response = await fetch(`https://api.github.com/gists/${gistId}`, {
+                const response = await fetch(`https://api.github.com/gists/${userDbSettings.gistId}`, {
                     headers: {
                         'Authorization': `token ${userDbSettings.token}`
                     }
@@ -2000,7 +2047,6 @@
                     
                     // Save the gist ID
                     userDbSettings.gistId = gistId;
-                    localStorage.setItem('userDbGistId', gistId);
                 }
                 
                 return gistId;
@@ -2012,7 +2058,7 @@
 
         // Sync data to cloud
         async function syncToCloud() {
-            if (!currentUser || !isConfigured) {
+            if (!currentUser || !isConfigured || !userDbSettings.token) {
                 return;
             }
             
@@ -2050,7 +2096,7 @@
 
         // Add activity to the feed
         async function addActivity(description) {
-            if (!currentUser || !isConfigured || !realtimeSettings.gistId) {
+            if (!currentUser || !isConfigured || !realtimeSettings.gistId || !realtimeSettings.token) {
                 return;
             }
             
@@ -2127,7 +2173,7 @@
             
             // Set up periodic sync
             realtimeSettings.syncTimer = setInterval(() => {
-                if (currentUser && isConfigured) {
+                if (currentUser && isConfigured && userDbSettings.token) {
                     syncToCloud();
                 }
             }, realtimeSettings.syncInterval * 1000);
@@ -2153,7 +2199,7 @@
 
         // Update cloud status indicator
         function updateCloudStatus() {
-            if (isConfigured) {
+            if (isConfigured && userDbSettings.token) {
                 cloudStatusIndicator.classList.add('connected');
                 cloudStatusText.textContent = 'Connected to cloud storage';
             } else {
@@ -2177,7 +2223,7 @@
                     loadUserCollection();
                     
                     // Start real-time sync if configured
-                    if (isConfigured) {
+                    if (isConfigured && userDbSettings.token) {
                         startRealtimeSync();
                     }
                 } catch (error) {
@@ -2227,8 +2273,8 @@
                 // Enable/disable controls based on authentication
                 saveDataBtn.disabled = false;
                 loadDataBtn.disabled = false;
-                saveCloudBtn.disabled = !isConfigured;
-                loadCloudBtn.disabled = !isConfigured;
+                saveCloudBtn.disabled = !isConfigured || !userDbSettings.token;
+                loadCloudBtn.disabled = !isConfigured || !userDbSettings.token;
                 
                 // Hide view-only message
                 viewOnlyMessage.style.display = 'none';
@@ -2354,6 +2400,9 @@
                         currentUser = adminUser;
                         isAdmin = true;
                         
+                        // Save to localStorage
+                        localStorage.setItem('currentUser', JSON.stringify(currentUser));
+                        
                         // Update UI
                         updateAuthUI();
                         closeAuthModal();
@@ -2372,6 +2421,11 @@
                 }
                 
                 // Normal registration process (when system is configured)
+                if (!isConfigured || !userDbSettings.token) {
+                    showNotification('System is not configured for registration', 'error');
+                    return;
+                }
+                
                 try {
                     // Load existing users
                     const users = await loadUsersFromDb();
@@ -2410,7 +2464,7 @@
                     loadUserCollection(); // Load the user's collection
                     
                     // Start real-time sync if configured
-                    if (isConfigured) {
+                    if (isConfigured && userDbSettings.token) {
                         startRealtimeSync();
                     }
                     
@@ -2451,7 +2505,27 @@
                         }
                     }
                     
+                    // Check if this is an admin login for reconfiguration
+                    if (isConfigured && !userDbSettings.token && username === 'admin') {
+                        // This is likely an admin trying to reconfigure the system
+                        // We need to check if there's an admin user in the database
+                        try {
+                            // Since we don't have tokens, we can't check the database
+                            // We'll assume the admin is trying to reconfigure
+                            showNotification('Please enter the configuration tokens to access the system', 'warning');
+                            openSetupModal();
+                            return;
+                        } catch (error) {
+                            console.error('Error checking admin credentials:', error);
+                        }
+                    }
+                    
                     // Normal login process (when system is configured)
+                    if (!isConfigured || !userDbSettings.token) {
+                        showNotification('System is not configured for login', 'error');
+                        return;
+                    }
+                    
                     const users = await loadUsersFromDb();
                     const user = users.find(u => u.username === username);
                     
@@ -2478,7 +2552,7 @@
                     loadUserCollection(); // Load the user's collection
                     
                     // Start real-time sync if configured
-                    if (isConfigured) {
+                    if (isConfigured && userDbSettings.token) {
                         startRealtimeSync();
                     }
                     
@@ -2535,13 +2609,6 @@
                     syncTimer: null
                 };
                 
-                // Save to localStorage
-                localStorage.setItem('userDbToken', userDbToken);
-                localStorage.setItem('userDbGistId', userDbGistId);
-                localStorage.setItem('realtimeToken', realtimeToken);
-                localStorage.setItem('realtimeGistId', realtimeGistId);
-                localStorage.setItem('syncInterval', syncInterval.toString());
-                
                 // Create configuration object
                 const config = {
                     userDbSettings: userDbSettings,
@@ -2570,7 +2637,7 @@
                 users.push(configUser);
                 
                 // Save users to the database (this will create the gist if needed)
-                await saveUsersToDb(users);
+                const userDbGistIdResult = await saveUsersToDb(users);
                 
                 // Create real-time data gist if needed
                 if (!realtimeGistId) {
@@ -2601,8 +2668,42 @@
                     
                     const gistData = await response.json();
                     realtimeSettings.gistId = gistData.id;
-                    localStorage.setItem('realtimeGistId', gistData.id);
                 }
+                
+                // Create a public configuration gist
+                const publicConfig = {
+                    configured: true,
+                    configuredAt: new Date().toISOString(),
+                    userDbGistId: userDbGistIdResult || userDbGistId,
+                    realtimeGistId: realtimeSettings.gistId,
+                    version: "1.0" // Version to track configuration changes
+                };
+                
+                const configResponse = await fetch('https://api.github.com/gists', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `token ${userDbToken}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        description: 'Lorcana Card Tracker Configuration',
+                        public: true, // This is a public gist
+                        files: {
+                            'config.json': {
+                                content: JSON.stringify(publicConfig, null, 2)
+                            }
+                        }
+                    })
+                });
+                
+                if (!configResponse.ok) {
+                    throw new Error(`GitHub API error: ${configResponse.status}`);
+                }
+                
+                const configGistData = await configResponse.json();
+                
+                // Store the public config gist ID
+                publicConfigGistId = configGistData.id;
                 
                 // Update system status
                 isConfigured = true;
