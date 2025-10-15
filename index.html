@@ -897,7 +897,7 @@
             </div>
         </div>
         
-        <div id="setupSection" class="setup-section">
+        <div id="setupSection" class="setup-section" style="display: none;">
             <h3>Administrator Setup</h3>
             <p>This tracker needs to be configured by an administrator before users can register and login.</p>
             <p>Administrators need to create a GitHub Personal Access Token to store user data and enable real-time synchronization.</p>
@@ -1147,19 +1147,27 @@
                     localStorage.setItem('syncInterval', realtimeSettings.syncInterval.toString());
                     
                     isConfigured = true;
-                    setupSection.style.display = 'none';
                 } else {
                     // Configuration doesn't exist
                     isConfigured = false;
-                    setupSection.style.display = 'block';
                 }
             } catch (error) {
                 console.error('Error checking configuration:', error);
                 isConfigured = false;
-                setupSection.style.display = 'block';
             }
             
             updateCloudStatus();
+            updateSetupSectionVisibility();
+        }
+
+        // Update setup section visibility based on user status
+        function updateSetupSectionVisibility() {
+            // Only show setup section if user is admin and system is not configured
+            if (isAdmin && !isConfigured) {
+                setupSection.style.display = 'block';
+            } else {
+                setupSection.style.display = 'none';
+            }
         }
 
         // Initialize the app
@@ -1285,6 +1293,9 @@
                 updateAuthUI();
                 stopRealtimeSync();
             }
+            
+            // Update setup section visibility after auth status changes
+            updateSetupSectionVisibility();
         }
 
         // Update authentication UI
@@ -1346,6 +1357,9 @@
                     updateStats();
                 }
             }
+            
+            // Update setup section visibility after UI changes
+            updateSetupSectionVisibility();
         }
 
         // Start real-time synchronization
@@ -2451,8 +2465,8 @@
                 
                 // Update configuration status
                 isConfigured = true;
-                setupSection.style.display = 'none';
                 updateCloudStatus();
+                updateSetupSectionVisibility();
                 
                 // If user is logged in, restart real-time sync
                 if (currentUser) {
