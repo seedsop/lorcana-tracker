@@ -1313,136 +1313,21 @@
                 allUsersStats.style.display = 'flex';
                 userStatsSection.style.display = 'block';
                 activitySection.style.display = 'block';
+                statsTitle.textContent = 'All Users Stats';
                 
-                // Load aggregated collection
-                loadAggregatedCollection();
-                loadUserActivities();
+                // Load all users data
+                loadAllUsersData();
             }
             
-            populateSetFilter();
-            applyFilters();
+            renderTable();
             updateStats();
         }
 
-        // Check authentication status
-        function checkAuthStatus() {
-            const userData = localStorage.getItem('lorcanaCurrentUser');
-            if (userData) {
-                currentUser = JSON.parse(userData);
-                // Check if user is admin
-                isAdmin = currentUser.username === 'admin';
-                updateAuthUI();
-                
-                // Only start real-time sync if system is configured
-                if (isConfigured) {
-                    startRealtimeSync();
-                }
-            } else {
-                currentUser = null;
-                isAdmin = false;
-                updateAuthUI();
-                stopRealtimeSync();
-            }
-            
-            // Update setup section visibility after auth status changes
-            updateSetupSectionVisibility();
-        }
-
-        // Update authentication UI
-        function updateAuthUI() {
-            if (currentUser) {
-                // User is logged in
-                userInfo.innerHTML = `
-                    <div class="user-avatar">${currentUser.username.charAt(0).toUpperCase()}</div>
-                    <span>${currentUser.username}</span>
-                    <div class="online-indicator online"></div>
-                    <button id="logoutBtn" class="secondary-btn">Logout</button>
-                    ${isAdmin ? '<button id="adminSetupBtn" class="secondary-btn">Admin Settings</button>' : ''}
-                `;
-                
-                // Enable edit controls
-                saveDataBtn.disabled = false;
-                loadDataBtn.disabled = false;
-                saveCloudBtn.disabled = !isConfigured;
-                loadCloudBtn.disabled = !isConfigured;
-                viewOnlyMessage.style.display = 'none';
-                
-                // Show real-time status only if configured
-                realTimeStatus.style.display = isConfigured ? 'flex' : 'none';
-                
-                // Add logout button event listener
-                document.getElementById('logoutBtn').addEventListener('click', logoutUser);
-                
-                // Add admin setup button event listener if admin
-                if (isAdmin) {
-                    document.getElementById('adminSetupBtn').addEventListener('click', openSetupModal);
-                }
-                
-                // Load user's collection
-                if (currentView === 'my') {
-                    loadUserCollection();
-                }
-            } else {
-                // User is not logged in
-                userInfo.innerHTML = '<button id="loginRegisterBtn">Login / Register</button>';
-                
-                // Disable edit controls
-                saveDataBtn.disabled = true;
-                loadDataBtn.disabled = true;
-                saveCloudBtn.disabled = true;
-                loadCloudBtn.disabled = true;
-                viewOnlyMessage.style.display = 'block';
-                
-                // Hide real-time status
-                realTimeStatus.style.display = 'none';
-                
-                // Add login/register button event listener
-                document.getElementById('loginRegisterBtn').addEventListener('click', openAuthModal);
-                
-                // Reset to default card collection
-                if (currentView === 'my') {
-                    cards = [...initialCards];
-                    filteredCards = [...cards];
-                    renderTable();
-                    updateStats();
-                }
-            }
-            
-            // Update setup section visibility after UI changes
-            updateSetupSectionVisibility();
-        }
-
-        // Start real-time synchronization
-        function startRealtimeSync() {
-            if (!currentUser || !realtimeSettings.token) return;
-            
-            // Clear any existing timer
-            if (realtimeSettings.syncTimer) {
-                clearInterval(realtimeSettings.syncTimer);
-            }
-            
-            // Set up periodic sync
-            realtimeSettings.syncTimer = setInterval(() => {
-                syncRealtimeData();
-            }, realtimeSettings.syncInterval * 1000);
-            
-            // Initial sync
-            syncRealtimeData();
-        }
-
-        // Stop real-time synchronization
-        function stopRealtimeSync() {
-            if (realtimeSettings.syncTimer) {
-                clearInterval(realtimeSettings.syncTimer);
-                realtimeSettings.syncTimer = null;
-            }
-        }
-
-        // Populate set filter dropdown
+        // Populate the set filter dropdown
         function populateSetFilter() {
             const sets = [...new Set(cards.map(card => card.set))].sort();
             
-            // Clear existing options except "All Sets"
+            // Clear existing options except the first one
             while (setFilter.options.length > 1) {
                 setFilter.remove(1);
             }
@@ -1456,7 +1341,7 @@
             });
         }
 
-        // Apply filters to the card list
+        // Apply filters to the cards
         function applyFilters() {
             const nameValue = nameFilter.value.toLowerCase();
             const subtitleValue = subtitleFilter.value.toLowerCase();
@@ -1465,15 +1350,13 @@
             const rarityValue = rarityFilter.value;
             
             filteredCards = cards.filter(card => {
-                const cardColor1 = card.color_1 || '';
-                const cardColor2 = card.color_2 || '';
-                const matchesName = !nameValue || card.name.toLowerCase().includes(nameValue);
-                const matchesSubtitle = !subtitleValue || (card.subtitle && card.subtitle.toLowerCase().includes(subtitleValue));
-                const matchesSet = !setValue || card.set === setValue;
-                const matchesColor = !colorValue || (cardColor1 === colorValue || cardColor2 === colorValue);
-                const matchesRarity = !rarityValue || card.rarity === rarityValue;
-                
-                return matchesName && matchesSubtitle && matchesSet && matchesColor && matchesRarity;
+                return (
+                    (nameValue === '' || card.name.toLowerCase().includes(nameValue)) &&
+                    (subtitleValue === '' || card.subtitle.toLowerCase().includes(subtitleValue)) &&
+                    (setValue === '' || card.set === setValue) &&
+                    (colorValue === '' || card.color_1 === colorValue || card.color_2 === colorValue) &&
+                    (rarityValue === '' || card.rarity === rarityValue)
+                );
             });
             
             renderTable();
@@ -1488,7 +1371,9 @@
             colorFilter.value = '';
             rarityFilter.value = '';
             
-            applyFilters();
+            filteredCards = [...cards];
+            renderTable();
+            updateStats();
         }
 
         // Handle sorting
@@ -1513,10 +1398,10 @@
                 let valueA = a[column] || '';
                 let valueB = b[column] || '';
                 
-                // Special handling for card_number to sort numerically
-                if (column === 'card_number') {
-                    valueA = parseInt(valueA) || 0;
-                    valueB = parseInt(valueB) || 0;
+                // Convert to numbers if possible
+                if (!isNaN(valueA) && !isNaN(valueB)) {
+                    valueA = Number(valueA);
+                    valueB = Number(valueB);
                 }
                 
                 if (valueA < valueB) {
@@ -1535,108 +1420,86 @@
         function renderTable() {
             cardTableBody.innerHTML = '';
             
-            if (filteredCards.length === 0) {
-                const row = document.createElement('tr');
-                row.innerHTML = '<td colspan="9" style="text-align: center;">No cards found</td>';
-                cardTableBody.appendChild(row);
-                return;
-            }
-            
             filteredCards.forEach(card => {
                 const row = document.createElement('tr');
                 
-                // Format color displays
-                const colorClass1 = card.color_1 ? `color-${card.color_1.toLowerCase()}` : '';
-                const colorDisplay1 = card.color_1 || '';
-                
-                const colorClass2 = card.color_2 ? `color-${card.color_2.toLowerCase()}` : '';
-                const colorDisplay2 = card.color_2 || '';
-                
-                // Format rarity display
+                // Add classes for color and rarity
+                const color1Class = card.color_1 ? `color-${card.color_1.toLowerCase().replace(' ', '-')}` : '';
+                const color2Class = card.color_2 ? `color-${card.color_2.toLowerCase().replace(' ', '-')}` : '';
                 const rarityClass = card.rarity ? `rarity ${card.rarity.toLowerCase().replace(' ', '-')}` : '';
-                const rarityDisplay = card.rarity || '';
                 
                 row.innerHTML = `
                     <td>${card.name}</td>
-                    <td>${card.subtitle || ''}</td>
+                    <td>${card.subtitle}</td>
                     <td>Set ${card.set}</td>
                     <td>${card.card_number}</td>
-                    <td class="${colorClass1}">${colorDisplay1}</td>
-                    <td class="${colorClass2}">${colorDisplay2}</td>
-                    <td class="${rarityClass}">${rarityDisplay}</td>
+                    <td class="${color1Class}">${card.color_1}</td>
+                    <td class="${color2Class}">${card.color_2 || '-'}</td>
+                    <td class="${rarityClass}">${card.rarity}</td>
                     <td>
-                        <input type="number" class="count-input" min="0" value="${card.normal || 0}" 
-                            data-card-name="${card.name}" data-card-subtitle="${card.subtitle || ''}" 
-                            data-type="normal" ${!currentUser ? 'disabled' : ''}>
+                        <input type="number" class="count-input" min="0" value="${card.normal}" 
+                               data-id="${card.set}-${card.card_number}" data-type="normal" 
+                               ${!currentUser ? 'disabled' : ''}>
                     </td>
                     <td>
-                        <input type="number" class="count-input" min="0" value="${card.foil || 0}" 
-                            data-card-name="${card.name}" data-card-subtitle="${card.subtitle || ''}" 
-                            data-type="foil" ${!currentUser ? 'disabled' : ''}>
+                        <input type="number" class="count-input" min="0" value="${card.foil}" 
+                               data-id="${card.set}-${card.card_number}" data-type="foil" 
+                               ${!currentUser ? 'disabled' : ''}>
                     </td>
                 `;
                 
                 cardTableBody.appendChild(row);
-                
-                // Add event listeners to count inputs
-                const countInputs = row.querySelectorAll('.count-input');
-                countInputs.forEach(input => {
-                    input.addEventListener('change', handleCountChange);
-                });
+            });
+            
+            // Add event listeners to count inputs
+            document.querySelectorAll('.count-input').forEach(input => {
+                input.addEventListener('change', handleCountChange);
             });
         }
 
         // Handle count input changes
         function handleCountChange(event) {
-            if (!currentUser) return;
-            
             const input = event.target;
-            const cardName = input.dataset.cardName;
-            const cardSubtitle = input.dataset.cardSubtitle;
+            const id = input.dataset.id;
             const type = input.dataset.type;
             const value = parseInt(input.value) || 0;
             
-            // Find the card in the cards array
-            const card = cards.find(c => 
-                c.name === cardName && (c.subtitle || '') === cardSubtitle
-            );
-            
+            // Find the card
+            const card = cards.find(c => `${c.set}-${c.card_number}` === id);
             if (card) {
                 card[type] = value;
-                
-                // Update the stats
                 updateStats();
                 
-                // Save to local storage
+                // Mark row as updated
+                const row = input.closest('tr');
+                row.classList.add('updated');
+                setTimeout(() => {
+                    row.classList.remove('updated');
+                }, 2000);
+                
+                // Save to localStorage
                 saveDataToLocalStorage();
                 
-                // Auto-save to cloud if configured
-                if (realtimeSettings.token && realtimeSettings.gistId) {
-                    saveToCloud();
+                // If real-time sync is enabled, sync to cloud
+                if (isConfigured && currentUser && realtimeSettings.syncTimer) {
+                    syncToCloud();
                 }
-                
-                // Add activity
-                addActivity(`${currentUser.username} updated ${cardName} ${type} count to ${value}`);
             }
         }
 
         // Update statistics
         function updateStats() {
+            let totalCards = 0;
+            let totalNormal = 0;
+            let totalFoil = 0;
+            let uniqueCards = 0;
+            
             if (currentView === 'my') {
                 // Calculate stats for current user's collection
-                let totalCards = 0;
-                let totalNormal = 0;
-                let totalFoil = 0;
-                let uniqueCards = 0;
-                
                 cards.forEach(card => {
-                    const normalCount = parseInt(card.normal) || 0;
-                    const foilCount = parseInt(card.foil) || 0;
-                    
-                    totalNormal += normalCount;
-                    totalFoil += foilCount;
-                    
-                    if (normalCount > 0 || foilCount > 0) {
+                    totalNormal += card.normal;
+                    totalFoil += card.foil;
+                    if (card.normal > 0 || card.foil > 0) {
                         uniqueCards++;
                     }
                 });
@@ -1649,56 +1512,52 @@
                 uniqueCardsEl.textContent = uniqueCards;
             } else {
                 // Calculate stats for all users
-                let allUsersCount = allUsers.length;
-                let allCardsCount = 0;
-                let allNormalCount = 0;
-                let allFoilCount = 0;
+                allUsersTotalEl.textContent = allUsers.length;
+                
+                let allTotalCards = 0;
+                let allTotalNormal = 0;
+                let allTotalFoil = 0;
                 
                 allUsers.forEach(user => {
-                    allCardsCount += user.totalCards || 0;
-                    allNormalCount += user.normalCards || 0;
-                    allFoilCount += user.foilCards || 0;
+                    if (user.stats) {
+                        allTotalCards += user.stats.totalCards;
+                        allTotalNormal += user.stats.normalCards;
+                        allTotalFoil += user.stats.foilCards;
+                    }
                 });
                 
-                allUsersTotalEl.textContent = allUsersCount;
-                allUsersCardsEl.textContent = allCardsCount;
-                allUsersNormalEl.textContent = allNormalCount;
-                allUsersFoilEl.textContent = allFoilCount;
+                allUsersCardsEl.textContent = allTotalCards;
+                allUsersNormalEl.textContent = allTotalNormal;
+                allUsersFoilEl.textContent = allTotalFoil;
                 
                 // Update user stats table
                 updateUserStatsTable();
+                
+                // Update activity feed
+                updateActivityFeed();
             }
         }
 
-        // Update user stats table
+        // Update the user stats table
         function updateUserStatsTable() {
             userStatsTableBody.innerHTML = '';
             
-            if (allUsers.length === 0) {
-                const row = document.createElement('tr');
-                row.innerHTML = '<td colspan="7" style="text-align: center;">No users found</td>';
-                userStatsTableBody.appendChild(row);
-                return;
-            }
-            
             allUsers.forEach(user => {
                 const row = document.createElement('tr');
-                
-                // Add active class if this is the current user
                 if (currentUser && user.username === currentUser.username) {
                     row.classList.add('active-user');
                 }
                 
-                // Format last activity time
                 const lastActivity = user.lastActivity ? new Date(user.lastActivity).toLocaleString() : 'Never';
+                const status = user.online ? 'Online' : 'Offline';
                 
                 row.innerHTML = `
                     <td>${user.username}</td>
-                    <td>${user.online ? '<span style="color: green;">Online</span>' : '<span style="color: gray;">Offline</span>'}</td>
-                    <td>${user.totalCards || 0}</td>
-                    <td>${user.normalCards || 0}</td>
-                    <td>${user.foilCards || 0}</td>
-                    <td>${user.uniqueCards || 0}</td>
+                    <td>${status}</td>
+                    <td>${user.stats ? user.stats.totalCards : 0}</td>
+                    <td>${user.stats ? user.stats.normalCards : 0}</td>
+                    <td>${user.stats ? user.stats.foilCards : 0}</td>
+                    <td>${user.stats ? user.stats.uniqueCards : 0}</td>
                     <td>${lastActivity}</td>
                 `;
                 
@@ -1706,494 +1565,595 @@
             });
         }
 
-        // Save data to local storage
-        function saveData() {
-            saveDataToLocalStorage();
-            showNotification('Data saved locally', 'success');
-        }
-
-        // Save data to local storage (internal function)
-        function saveDataToLocalStorage() {
-            if (currentUser) {
-                const userData = {
-                    username: currentUser.username,
-                    cards: cards,
-                    lastUpdated: new Date().toISOString()
-                };
-                
-                localStorage.setItem(`lorcanaUserData_${currentUser.username}`, JSON.stringify(userData));
-            }
-        }
-
-        // Load data from local storage
-        function loadData() {
-            if (!currentUser) return;
-            
-            const userData = localStorage.getItem(`lorcanaUserData_${currentUser.username}`);
-            
-            if (userData) {
-                const parsedData = JSON.parse(userData);
-                cards = parsedData.cards || [...initialCards];
-                filteredCards = [...cards];
-                renderTable();
-                updateStats();
-                showNotification('Data loaded from local storage', 'success');
-            } else {
-                showNotification('No local data found', 'warning');
-            }
-        }
-
-        // Save data to cloud (GitHub Gist)
-        function saveToCloud() {
-            if (!currentUser || !realtimeSettings.token) {
-                showNotification('Not configured for cloud sync', 'error');
-                return;
-            }
-            
-            syncIndicator.classList.add('syncing');
-            
-            const userData = {
-                username: currentUser.username,
-                cards: cards,
-                lastUpdated: new Date().toISOString()
-            };
-            
-            const gistData = {
-                description: `Lorcana Card Tracker Data for ${currentUser.username}`,
-                files: {
-                    "data.json": {
-                        content: JSON.stringify(userData)
-                    }
-                }
-            };
-            
-            // If we have a gist ID, update it, otherwise create a new one
-            const url = realtimeSettings.gistId 
-                ? `https://api.github.com/gists/${realtimeSettings.gistId}`
-                : 'https://api.github.com/gists';
-            
-            const method = realtimeSettings.gistId ? 'PATCH' : 'POST';
-            
-            fetch(url, {
-                method: method,
-                headers: {
-                    'Authorization': `token ${realtimeSettings.token}`,
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify(gistData)
-            })
-            .then(response => {
-                if (!response.ok) {
-                    throw new Error('Failed to save to cloud');
-                }
-                return response.json();
-            })
-            .then(data => {
-                // If we created a new gist, save the ID
-                if (!realtimeSettings.gistId && data.id) {
-                    realtimeSettings.gistId = data.id;
-                    localStorage.setItem('realtimeGistId', data.id);
-                    
-                    // Update user data with the new gist ID
-                    if (currentUser) {
-                        currentUser.realtimeGistId = data.id;
-                        localStorage.setItem('lorcanaCurrentUser', JSON.stringify(currentUser));
-                        
-                        // Update user in the database
-                        updateUserInDb(currentUser);
-                    }
-                }
-                
-                syncIndicator.classList.remove('syncing');
-                showNotification('Data saved to cloud', 'success');
-                
-                // Add activity
-                addActivity(`${currentUser.username} saved data to cloud`);
-            })
-            .catch(error => {
-                syncIndicator.classList.remove('syncing');
-                showNotification('Error saving to cloud: ' + error.message, 'error');
-                console.error('Error saving to cloud:', error);
-            });
-        }
-
-        // Load data from cloud (GitHub Gist)
-        function loadFromCloud() {
-            if (!currentUser || !realtimeSettings.token || !realtimeSettings.gistId) {
-                showNotification('Not configured for cloud sync', 'error');
-                return;
-            }
-            
-            syncIndicator.classList.add('syncing');
-            
-            fetch(`https://api.github.com/gists/${realtimeSettings.gistId}`, {
-                headers: {
-                    'Authorization': `token ${realtimeSettings.token}`
-                }
-            })
-            .then(response => {
-                if (!response.ok) {
-                    throw new Error('Failed to load from cloud');
-                }
-                return response.json();
-            })
-            .then(data => {
-                const fileContent = data.files["data.json"].content;
-                const userData = JSON.parse(fileContent);
-                
-                if (userData.username === currentUser.username) {
-                    cards = userData.cards || [...initialCards];
-                    filteredCards = [...cards];
-                    renderTable();
-                    updateStats();
-                    saveDataToLocalStorage();
-                    
-                    syncIndicator.classList.remove('syncing');
-                    showNotification('Data loaded from cloud', 'success');
-                    
-                    // Add activity
-                    addActivity(`${currentUser.username} loaded data from cloud`);
-                } else {
-                    throw new Error('Data does not belong to current user');
-                }
-            })
-            .catch(error => {
-                syncIndicator.classList.remove('syncing');
-                showNotification('Error loading from cloud: ' + error.message, 'error');
-                console.error('Error loading from cloud:', error);
-            });
-        }
-
-        // Sync real-time data
-        function syncRealtimeData() {
-            if (!currentUser || !realtimeSettings.token || !realtimeSettings.gistId) return;
-            
-            // Only sync if it's been at least 5 seconds since the last sync
-            const now = Date.now();
-            if (now - realtimeSettings.lastSync < 5000) return;
-            
-            realtimeSettings.lastSync = now;
-            
-            fetch(`https://api.github.com/gists/${realtimeSettings.gistId}`, {
-                headers: {
-                    'Authorization': `token ${realtimeSettings.token}`
-                }
-            })
-            .then(response => {
-                if (!response.ok) {
-                    throw new Error('Failed to sync data');
-                }
-                return response.json();
-            })
-            .then(data => {
-                const fileContent = data.files["data.json"].content;
-                const cloudData = JSON.parse(fileContent);
-                
-                // Check if the cloud data is newer than our local data
-                const localLastUpdated = new Date(lastUpdateTime).getTime();
-                const cloudLastUpdated = new Date(cloudData.lastUpdated).getTime();
-                
-                if (cloudLastUpdated > localLastUpdated) {
-                    // Update local data with cloud data
-                    cards = cloudData.cards || [...initialCards];
-                    filteredCards = [...cards];
-                    renderTable();
-                    updateStats();
-                    saveDataToLocalStorage();
-                    
-                    lastUpdateTime = cloudLastUpdated;
-                    
-                    // Add activity
-                    addActivity(`${currentUser.username} synced data from cloud`);
-                }
-            })
-            .catch(error => {
-                console.error('Error syncing real-time data:', error);
-            });
-        }
-
-        // Refresh user data from the database
-        function refreshUserData() {
-            if (!userDbSettings.token) {
-                showNotification('User database not configured', 'error');
-                return;
-            }
-            
-            loadUsersFromDb()
-                .then(users => {
-                    allUsers = users;
-                    
-                    if (currentView === 'all') {
-                        updateStats();
-                        updateUserStatsTable();
-                    }
-                    
-                    showNotification('User data refreshed', 'success');
-                })
-                .catch(error => {
-                    showNotification('Error refreshing user data: ' + error.message, 'error');
-                });
-        }
-
-        // Load users from the database
-        function loadUsersFromDb() {
-            return new Promise((resolve, reject) => {
-                if (!userDbSettings.token) {
-                    // If no token, return empty users array for first-time setup
-                    resolve([]);
-                    return;
-                }
-                
-                const url = userDbSettings.gistId 
-                    ? `https://api.github.com/gists/${userDbSettings.gistId}`
-                    : 'https://api.github.com/gists';
-                
-                fetch(url, {
-                    headers: {
-                        'Authorization': `token ${userDbSettings.token}`
-                    }
-                })
-                .then(response => {
-                    if (!response.ok) {
-                        throw new Error('Failed to load user database');
-                    }
-                    return response.json();
-                })
-                .then(data => {
-                    let users = [];
-                    
-                    if (data.files && data.files["users.json"]) {
-                        const fileContent = data.files["users.json"].content;
-                        users = JSON.parse(fileContent);
-                    }
-                    
-                    resolve(users);
-                })
-                .catch(error => {
-                    reject(error);
-                });
-            });
-        }
-
-        // Save users to the database
-        function saveUsersToDb(users) {
-            return new Promise((resolve, reject) => {
-                if (!userDbSettings.token) {
-                    reject(new Error('User database not configured'));
-                    return;
-                }
-                
-                const gistData = {
-                    description: 'Lorcana Card Tracker User Database',
-                    files: {
-                        "users.json": {
-                            content: JSON.stringify(users)
-                        }
-                    }
-                };
-                
-                // If we have a gist ID, update it, otherwise create a new one
-                const url = userDbSettings.gistId 
-                    ? `https://api.github.com/gists/${userDbSettings.gistId}`
-                    : 'https://api.github.com/gists';
-                
-                const method = userDbSettings.gistId ? 'PATCH' : 'POST';
-                
-                fetch(url, {
-                    method: method,
-                    headers: {
-                        'Authorization': `token ${userDbSettings.token}`,
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify(gistData)
-                })
-                .then(response => {
-                    if (!response.ok) {
-                        throw new Error('Failed to save user database');
-                    }
-                    return response.json();
-                })
-                .then(data => {
-                    // If we created a new gist, save the ID
-                    if (!userDbSettings.gistId && data.id) {
-                        userDbSettings.gistId = data.id;
-                        localStorage.setItem('userDbGistId', data.id);
-                    }
-                    
-                    resolve(data);
-                })
-                .catch(error => {
-                    reject(error);
-                });
-            });
-        }
-
-        // Update a user in the database
-        function updateUserInDb(updatedUser) {
-            loadUsersFromDb()
-                .then(users => {
-                    const userIndex = users.findIndex(u => u.username === updatedUser.username);
-                    
-                    if (userIndex !== -1) {
-                        users[userIndex] = updatedUser;
-                    } else {
-                        users.push(updatedUser);
-                    }
-                    
-                    return saveUsersToDb(users);
-                })
-                .then(() => {
-                    // Add activity
-                    addActivity(`${updatedUser.username} profile updated`);
-                })
-                .catch(error => {
-                    console.error('Error updating user in database:', error);
-                });
-        }
-
-        // Load user collection
-        function loadUserCollection() {
-            if (!currentUser) return;
-            
-            // Try to load from local storage first
-            const localUserData = localStorage.getItem(`lorcanaUserData_${currentUser.username}`);
-            
-            if (localUserData) {
-                const parsedData = JSON.parse(localUserData);
-                cards = parsedData.cards || [...initialCards];
-                filteredCards = [...cards];
-                lastUpdateTime = new Date(parsedData.lastUpdated).getTime() || 0;
-                renderTable();
-                updateStats();
-            }
-            
-            // Then try to load from cloud if configured
-            if (realtimeSettings.token && realtimeSettings.gistId) {
-                loadFromCloud();
-            }
-        }
-
-        // Load aggregated collection
-        function loadAggregatedCollection() {
-            // This would normally load data from all users and aggregate it
-            // For now, we'll just use the initial cards
-            cards = [...initialCards];
-            filteredCards = [...cards];
-            renderTable();
-            
-            // Load user stats
-            refreshUserData();
-        }
-
-        // Load user activities
-        function loadUserActivities() {
-            // This would normally load activities from a central location
-            // For now, we'll just use the activities we've collected
-            renderActivities();
-        }
-
-        // Add an activity
-        function addActivity(message) {
-            const activity = {
-                message: message,
-                timestamp: new Date().toISOString(),
-                username: currentUser ? currentUser.username : 'System'
-            };
-            
-            userActivities.unshift(activity);
-            
-            // Keep only the last 50 activities
-            if (userActivities.length > 50) {
-                userActivities = userActivities.slice(0, 50);
-            }
-            
-            // Update the activity feed if it's visible
-            if (currentView === 'all') {
-                renderActivities();
-            }
-        }
-
-        // Render activities
-        function renderActivities() {
+        // Update the activity feed
+        function updateActivityFeed() {
             activityFeed.innerHTML = '';
             
-            if (userActivities.length === 0) {
+            // Get recent activities (last 10)
+            const recentActivities = [...userActivities]
+                .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
+                .slice(0, 10);
+            
+            if (recentActivities.length === 0) {
                 activityFeed.innerHTML = '<div class="activity-item">No recent activity</div>';
                 return;
             }
             
-            userActivities.forEach(activity => {
+            recentActivities.forEach(activity => {
                 const item = document.createElement('div');
-                item.className = 'activity-item';
+                item.classList.add('activity-item');
                 
                 const time = new Date(activity.timestamp).toLocaleString();
-                
                 item.innerHTML = `
-                    <div>${activity.message}</div>
-                    <div class="activity-time">${activity.username} - ${time}</div>
+                    <div>${activity.description}</div>
+                    <div class="activity-time">${time} - ${activity.username}</div>
                 `;
                 
                 activityFeed.appendChild(item);
             });
         }
 
-        // Handle file upload
+        // Save data to localStorage
+        function saveDataToLocalStorage() {
+            if (currentUser) {
+                const userData = {
+                    cards: cards,
+                    lastUpdated: new Date().toISOString()
+                };
+                
+                localStorage.setItem(`user_${currentUser.username}`, JSON.stringify(userData));
+            }
+        }
+
+        // Save data to local file
+        function saveData() {
+            if (!currentUser) {
+                showNotification('Please log in to save data', 'error');
+                return;
+            }
+            
+            const dataStr = JSON.stringify(cards, null, 2);
+            const dataUri = 'data:application/json;charset=utf-8,'+ encodeURIComponent(dataStr);
+            
+            const exportFileDefaultName = `lorcana_collection_${currentUser.username}_${new Date().toISOString().slice(0,10)}.json`;
+            
+            const linkElement = document.createElement('a');
+            linkElement.setAttribute('href', dataUri);
+            linkElement.setAttribute('download', exportFileDefaultName);
+            linkElement.click();
+            
+            showNotification('Data saved to local file', 'success');
+        }
+
+        // Load data from local file
+        function loadData() {
+            if (!currentUser) {
+                showNotification('Please log in to load data', 'error');
+                return;
+            }
+            
+            const input = document.createElement('input');
+            input.type = 'file';
+            input.accept = '.json';
+            
+            input.onchange = e => {
+                const file = e.target.files[0];
+                const reader = new FileReader();
+                
+                reader.onload = event => {
+                    try {
+                        const data = JSON.parse(event.target.result);
+                        
+                        // Validate data structure
+                        if (Array.isArray(data)) {
+                            cards = data;
+                            filteredCards = [...cards];
+                            renderTable();
+                            updateStats();
+                            saveDataToLocalStorage();
+                            showNotification('Data loaded successfully', 'success');
+                        } else {
+                            showNotification('Invalid data format', 'error');
+                        }
+                    } catch (error) {
+                        showNotification('Error loading data: ' + error.message, 'error');
+                    }
+                };
+                
+                reader.readAsText(file);
+            };
+            
+            input.click();
+        }
+
+        // Handle CSV file upload
         function handleFileUpload(event) {
             const file = event.target.files[0];
             if (!file) return;
             
             const reader = new FileReader();
-            
             reader.onload = function(e) {
                 try {
-                    const csvData = e.target.result;
-                    const lines = csvData.split('\n');
+                    const csv = e.target.result;
+                    const lines = csv.split('\n');
                     const headers = lines[0].split(',').map(h => h.trim());
                     
                     // Parse CSV data
                     const newCards = [];
-                    
                     for (let i = 1; i < lines.length; i++) {
-                        const line = lines[i].trim();
-                        if (!line) continue;
+                        if (lines[i].trim() === '') continue;
                         
-                        const values = line.split(',').map(v => v.trim().replace(/^"|"$/g, ''));
-                        
+                        const values = lines[i].split(',').map(v => v.trim());
                         const card = {};
+                        
                         headers.forEach((header, index) => {
                             card[header] = values[index] || '';
                         });
                         
-                        // Initialize counts if not present
-                        if (!card.normal) card.normal = 0;
-                        if (!card.foil) card.foil = 0;
+                        // Initialize counts
+                        card.normal = 0;
+                        card.foil = 0;
                         
                         newCards.push(card);
                     }
                     
-                    // Replace current cards with the new ones
-                    cards = newCards;
+                    // Add new cards to existing cards
+                    newCards.forEach(newCard => {
+                        const existingCard = cards.find(c => 
+                            c.name === newCard.name && 
+                            c.subtitle === newCard.subtitle && 
+                            c.set === newCard.set && 
+                            c.card_number === newCard.card_number
+                        );
+                        
+                        if (!existingCard) {
+                            cards.push(newCard);
+                        }
+                    });
+                    
                     filteredCards = [...cards];
                     renderTable();
                     updateStats();
                     populateSetFilter();
                     
-                    // Save to local storage
-                    saveDataToLocalStorage();
-                    
-                    showNotification(`Loaded ${newCards.length} cards from CSV`, 'success');
+                    showNotification(`Imported ${newCards.length} cards from CSV`, 'success');
                 } catch (error) {
-                    showNotification('Error parsing CSV file: ' + error.message, 'error');
-                    console.error('Error parsing CSV:', error);
+                    showNotification('Error parsing CSV: ' + error.message, 'error');
                 }
             };
             
             reader.readAsText(file);
         }
 
+        // Save data to cloud
+        async function saveToCloud() {
+            if (!currentUser) {
+                showNotification('Please log in to save to cloud', 'error');
+                return;
+            }
+            
+            if (!isConfigured) {
+                showNotification('System is not configured for cloud storage', 'error');
+                return;
+            }
+            
+            try {
+                // Prepare user data
+                const userData = {
+                    username: currentUser.username,
+                    cards: cards,
+                    lastUpdated: new Date().toISOString()
+                };
+                
+                // Load existing users
+                const users = await loadUsersFromDb();
+                
+                // Find and update current user
+                const userIndex = users.findIndex(u => u.username === currentUser.username);
+                if (userIndex !== -1) {
+                    users[userIndex] = userData;
+                } else {
+                    users.push(userData);
+                }
+                
+                // Save to cloud
+                await saveUsersToDb(users);
+                
+                // Update last sync time
+                lastUpdateTime = Date.now();
+                
+                showNotification('Data saved to cloud', 'success');
+            } catch (error) {
+                showNotification('Error saving to cloud: ' + error.message, 'error');
+            }
+        }
+
+        // Load data from cloud
+        async function loadFromCloud() {
+            if (!currentUser) {
+                showNotification('Please log in to load from cloud', 'error');
+                return;
+            }
+            
+            if (!isConfigured) {
+                showNotification('System is not configured for cloud storage', 'error');
+                return;
+            }
+            
+            try {
+                // Load users from cloud
+                const users = await loadUsersFromDb();
+                
+                // Find current user
+                const userData = users.find(u => u.username === currentUser.username);
+                
+                if (userData && userData.cards) {
+                    cards = userData.cards;
+                    filteredCards = [...cards];
+                    renderTable();
+                    updateStats();
+                    saveDataToLocalStorage();
+                    
+                    showNotification('Data loaded from cloud', 'success');
+                } else {
+                    showNotification('No data found for current user', 'warning');
+                }
+            } catch (error) {
+                showNotification('Error loading from cloud: ' + error.message, 'error');
+            }
+        }
+
+        // Refresh user data
+        async function refreshUserData() {
+            if (!isConfigured) {
+                showNotification('System is not configured', 'warning');
+                return;
+            }
+            
+            try {
+                await loadAllUsersData();
+                showNotification('User data refreshed', 'success');
+            } catch (error) {
+                showNotification('Error refreshing user data: ' + error.message, 'error');
+            }
+        }
+
+        // Load all users data
+        async function loadAllUsersData() {
+            if (!isConfigured) {
+                allUsers = [];
+                return;
+            }
+            
+            try {
+                const users = await loadUsersFromDb();
+                
+                // Filter out system users
+                allUsers = users.filter(u => u.username !== '__system_config__' && u.username !== '__realtime_data__');
+                
+                // Calculate stats for each user
+                allUsers.forEach(user => {
+                    if (user.cards) {
+                        let totalCards = 0;
+                        let normalCards = 0;
+                        let foilCards = 0;
+                        let uniqueCards = 0;
+                        
+                        user.cards.forEach(card => {
+                            normalCards += card.normal || 0;
+                            foilCards += card.foil || 0;
+                            if (card.normal > 0 || card.foil > 0) {
+                                uniqueCards++;
+                            }
+                        });
+                        
+                        totalCards = normalCards + foilCards;
+                        
+                        user.stats = {
+                            totalCards,
+                            normalCards,
+                            foilCards,
+                            uniqueCards
+                        };
+                    } else {
+                        user.stats = {
+                            totalCards: 0,
+                            normalCards: 0,
+                            foilCards: 0,
+                            uniqueCards: 0
+                        };
+                    }
+                });
+                
+                // Load activities
+                loadActivities();
+            } catch (error) {
+                console.error('Error loading all users data:', error);
+                allUsers = [];
+            }
+        }
+
+        // Load activities from cloud
+        async function loadActivities() {
+            if (!isConfigured || !realtimeSettings.gistId) {
+                userActivities = [];
+                return;
+            }
+            
+            try {
+                const response = await fetch(`https://api.github.com/gists/${realtimeSettings.gistId}`, {
+                    headers: {
+                        'Authorization': `token ${realtimeSettings.token}`
+                    }
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`GitHub API error: ${response.status}`);
+                }
+                
+                const gistData = await response.json();
+                const realtimeFile = gistData.files['realtime_data.json'];
+                
+                if (realtimeFile) {
+                    const realtimeData = JSON.parse(realtimeFile.content);
+                    userActivities = realtimeData.activities || [];
+                }
+            } catch (error) {
+                console.error('Error loading activities:', error);
+                userActivities = [];
+            }
+        }
+
+        // Load users from database
+        async function loadUsersFromDb() {
+            if (!userDbSettings.token) {
+                return [];
+            }
+            
+            try {
+                let gistId = userDbSettings.gistId;
+                
+                // If no gist ID, we'll create one later
+                if (!gistId) {
+                    return [];
+                }
+                
+                const response = await fetch(`https://api.github.com/gists/${gistId}`, {
+                    headers: {
+                        'Authorization': `token ${userDbSettings.token}`
+                    }
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`GitHub API error: ${response.status}`);
+                }
+                
+                const gistData = await response.json();
+                const userDbFile = gistData.files['user_database.json'];
+                
+                if (userDbFile) {
+                    return JSON.parse(userDbFile.content);
+                }
+                
+                return [];
+            } catch (error) {
+                console.error('Error loading users from database:', error);
+                return [];
+            }
+        }
+
+        // Save users to database
+        async function saveUsersToDb(users) {
+            if (!userDbSettings.token) {
+                throw new Error('User database token not configured');
+            }
+            
+            try {
+                const data = JSON.stringify(users, null, 2);
+                let gistId = userDbSettings.gistId;
+                
+                if (gistId) {
+                    // Update existing gist
+                    const response = await fetch(`https://api.github.com/gists/${gistId}`, {
+                        method: 'PATCH',
+                        headers: {
+                            'Authorization': `token ${userDbSettings.token}`,
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            files: {
+                                'user_database.json': {
+                                    content: data
+                                }
+                            }
+                        })
+                    });
+                    
+                    if (!response.ok) {
+                        throw new Error(`GitHub API error: ${response.status}`);
+                    }
+                } else {
+                    // Create new gist
+                    const response = await fetch('https://api.github.com/gists', {
+                        method: 'POST',
+                        headers: {
+                            'Authorization': `token ${userDbSettings.token}`,
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            description: 'Lorcana Card Tracker User Database',
+                            public: false,
+                            files: {
+                                'user_database.json': {
+                                    content: data
+                                }
+                            }
+                        })
+                    });
+                    
+                    if (!response.ok) {
+                        throw new Error(`GitHub API error: ${response.status}`);
+                    }
+                    
+                    const gistData = await response.json();
+                    gistId = gistData.id;
+                    
+                    // Save the gist ID
+                    userDbSettings.gistId = gistId;
+                    localStorage.setItem('userDbGistId', gistId);
+                }
+                
+                return gistId;
+            } catch (error) {
+                console.error('Error saving users to database:', error);
+                throw error;
+            }
+        }
+
+        // Sync data to cloud
+        async function syncToCloud() {
+            if (!currentUser || !isConfigured) {
+                return;
+            }
+            
+            try {
+                // Prepare user data
+                const userData = {
+                    username: currentUser.username,
+                    cards: cards,
+                    lastUpdated: new Date().toISOString()
+                };
+                
+                // Load existing users
+                const users = await loadUsersFromDb();
+                
+                // Find and update current user
+                const userIndex = users.findIndex(u => u.username === currentUser.username);
+                if (userIndex !== -1) {
+                    users[userIndex] = userData;
+                } else {
+                    users.push(userData);
+                }
+                
+                // Save to cloud
+                await saveUsersToDb(users);
+                
+                // Add activity
+                addActivity('Updated collection');
+                
+                // Update last sync time
+                lastUpdateTime = Date.now();
+            } catch (error) {
+                console.error('Error syncing to cloud:', error);
+            }
+        }
+
+        // Add activity to the feed
+        async function addActivity(description) {
+            if (!currentUser || !isConfigured || !realtimeSettings.gistId) {
+                return;
+            }
+            
+            try {
+                const activity = {
+                    username: currentUser.username,
+                    description: description,
+                    timestamp: new Date().toISOString()
+                };
+                
+                // Load existing activities
+                const response = await fetch(`https://api.github.com/gists/${realtimeSettings.gistId}`, {
+                    headers: {
+                        'Authorization': `token ${realtimeSettings.token}`
+                    }
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`GitHub API error: ${response.status}`);
+                }
+                
+                const gistData = await response.json();
+                const realtimeFile = gistData.files['realtime_data.json'];
+                
+                let realtimeData = {
+                    activities: []
+                };
+                
+                if (realtimeFile) {
+                    realtimeData = JSON.parse(realtimeFile.content);
+                }
+                
+                // Add new activity
+                realtimeData.activities.push(activity);
+                
+                // Keep only the last 100 activities
+                if (realtimeData.activities.length > 100) {
+                    realtimeData.activities = realtimeData.activities.slice(-100);
+                }
+                
+                // Save back to gist
+                await fetch(`https://api.github.com/gists/${realtimeSettings.gistId}`, {
+                    method: 'PATCH',
+                    headers: {
+                        'Authorization': `token ${realtimeSettings.token}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        files: {
+                            'realtime_data.json': {
+                                content: JSON.stringify(realtimeData, null, 2)
+                            }
+                        }
+                    })
+                });
+                
+                // Update local activities
+                userActivities = realtimeData.activities;
+                
+                // If in all users view, update the activity feed
+                if (currentView === 'all') {
+                    updateActivityFeed();
+                }
+            } catch (error) {
+                console.error('Error adding activity:', error);
+            }
+        }
+
+        // Start real-time sync
+        function startRealtimeSync() {
+            if (realtimeSettings.syncTimer) {
+                clearInterval(realtimeSettings.syncTimer);
+            }
+            
+            // Set up periodic sync
+            realtimeSettings.syncTimer = setInterval(() => {
+                if (currentUser && isConfigured) {
+                    syncToCloud();
+                }
+            }, realtimeSettings.syncInterval * 1000);
+            
+            // Show real-time status
+            if (realtimeSettings.syncTimer) {
+                realTimeStatus.style.display = 'flex';
+                syncIndicator.classList.add('syncing');
+            }
+        }
+
+        // Stop real-time sync
+        function stopRealtimeSync() {
+            if (realtimeSettings.syncTimer) {
+                clearInterval(realtimeSettings.syncTimer);
+                realtimeSettings.syncTimer = null;
+            }
+            
+            // Hide real-time status
+            realTimeStatus.style.display = 'none';
+            syncIndicator.classList.remove('syncing');
+        }
+
         // Update cloud status indicator
         function updateCloudStatus() {
-            if (userDbSettings.token && realtimeSettings.token) {
+            if (isConfigured) {
                 cloudStatusIndicator.classList.add('connected');
                 cloudStatusText.textContent = 'Connected to cloud storage';
             } else {
@@ -2202,36 +2162,125 @@
             }
         }
 
-        // Show notification
-        function showNotification(message, type = 'success') {
-            notification.textContent = message;
-            notification.className = 'notification show';
+        // Check authentication status
+        function checkAuthStatus() {
+            // Check if user is logged in (in a real app, this would use a secure method)
+            const savedUser = localStorage.getItem('currentUser');
             
-            if (type === 'error') {
-                notification.classList.add('error');
-            } else if (type === 'warning') {
-                notification.classList.add('warning');
+            if (savedUser) {
+                try {
+                    currentUser = JSON.parse(savedUser);
+                    isAdmin = currentUser.isAdmin || false;
+                    updateAuthUI();
+                    
+                    // Load user's collection
+                    loadUserCollection();
+                    
+                    // Start real-time sync if configured
+                    if (isConfigured) {
+                        startRealtimeSync();
+                    }
+                } catch (error) {
+                    console.error('Error parsing saved user:', error);
+                    localStorage.removeItem('currentUser');
+                }
+            }
+        }
+
+        // Load user's collection
+        function loadUserCollection() {
+            if (!currentUser) return;
+            
+            // Try to load from localStorage first
+            const savedData = localStorage.getItem(`user_${currentUser.username}`);
+            
+            if (savedData) {
+                try {
+                    const userData = JSON.parse(savedData);
+                    cards = userData.cards || [...initialCards];
+                } catch (error) {
+                    console.error('Error parsing saved user data:', error);
+                    cards = [...initialCards];
+                }
+            } else {
+                cards = [...initialCards];
             }
             
-            setTimeout(() => {
-                notification.classList.remove('show');
-            }, 3000);
+            filteredCards = [...cards];
+            renderTable();
+            updateStats();
+        }
+
+        // Update authentication UI
+        function updateAuthUI() {
+            if (currentUser) {
+                userInfo.innerHTML = `
+                    <div class="user-avatar">${currentUser.username.charAt(0).toUpperCase()}</div>
+                    <div>${currentUser.username}</div>
+                    <div class="online-indicator online"></div>
+                    <button id="logoutBtn">Logout</button>
+                `;
+                
+                // Add logout event listener
+                document.getElementById('logoutBtn').addEventListener('click', logout);
+                
+                // Enable/disable controls based on authentication
+                saveDataBtn.disabled = false;
+                loadDataBtn.disabled = false;
+                saveCloudBtn.disabled = !isConfigured;
+                loadCloudBtn.disabled = !isConfigured;
+                
+                // Hide view-only message
+                viewOnlyMessage.style.display = 'none';
+                
+                // Update setup section visibility
+                updateSetupSectionVisibility();
+            } else {
+                userInfo.innerHTML = `
+                    <button id="loginRegisterBtn">Login / Register</button>
+                `;
+                
+                // Add login/register event listener
+                document.getElementById('loginRegisterBtn').addEventListener('click', openAuthModal);
+                
+                // Disable controls
+                saveDataBtn.disabled = true;
+                loadDataBtn.disabled = true;
+                saveCloudBtn.disabled = true;
+                loadCloudBtn.disabled = true;
+                
+                // Show view-only message
+                viewOnlyMessage.style.display = 'block';
+            }
+        }
+
+        // Logout
+        function logout() {
+            // Stop real-time sync
+            stopRealtimeSync();
+            
+            // Clear current user
+            currentUser = null;
+            isAdmin = false;
+            localStorage.removeItem('currentUser');
+            
+            // Update UI
+            updateAuthUI();
+            
+            // Reset to initial cards
+            cards = [...initialCards];
+            filteredCards = [...cards];
+            renderTable();
+            updateStats();
+            
+            showNotification('Logged out successfully', 'success');
         }
 
         // Open authentication modal
         function openAuthModal() {
             authModal.style.display = 'block';
-            resetAuthForm();
-        }
-
-        // Close authentication modal
-        function closeAuthModal() {
-            authModal.style.display = 'none';
-            resetAuthForm();
-        }
-
-        // Reset authentication form
-        function resetAuthForm() {
+            
+            // Reset form
             loginUsername.value = '';
             loginPassword.value = '';
             registerUsername.value = '';
@@ -2239,7 +2288,13 @@
             registerPassword.value = '';
             confirmPassword.value = '';
             
+            // Switch to login mode by default
             switchAuthMode('login');
+        }
+
+        // Close authentication modal
+        function closeAuthModal() {
+            authModal.style.display = 'none';
         }
 
         // Switch authentication mode
@@ -2262,103 +2317,65 @@
         }
 
         // Handle authentication
-        function handleAuth() {
-            if (authMode === 'login') {
-                handleLogin();
-            } else {
-                handleRegister();
-            }
-        }
-
-        // Handle login
-        function handleLogin() {
-            const username = loginUsername.value.trim();
-            const password = loginPassword.value;
-            
-            if (!username || !password) {
-                showNotification('Please enter username and password', 'error');
-                return;
-            }
-            
-            // Check if the system is configured
-            if (!isConfigured && username !== 'admin') {
-                showNotification('System not configured. Please contact administrator.', 'error');
-                return;
-            }
-            
-            // Load users from database
-            loadUsersFromDb()
-                .then(users => {
-                    const user = users.find(u => u.username === username);
-                    
-                    if (!user) {
-                        showNotification('User not found', 'error');
+        async function handleAuth() {
+            if (authMode === 'register') {
+                const username = registerUsername.value.trim();
+                const email = registerEmail.value.trim();
+                const password = registerPassword.value;
+                const confirmPasswordVal = confirmPassword.value;
+                
+                // Validation
+                if (!username || !email || !password || !confirmPasswordVal) {
+                    showNotification('Please fill in all fields', 'error');
+                    return;
+                }
+                
+                if (password !== confirmPasswordVal) {
+                    showNotification('Passwords do not match', 'error');
+                    return;
+                }
+                
+                // Special handling for first-time admin registration
+                if (isFirstTime && username === 'admin') {
+                    try {
+                        // Create admin user locally
+                        const adminUser = {
+                            username: username,
+                            email: email,
+                            password: password, // In a real app, this should be hashed
+                            isAdmin: true,
+                            createdAt: new Date().toISOString()
+                        };
+                        
+                        // Store admin user temporarily in localStorage
+                        localStorage.setItem('tempAdminUser', JSON.stringify(adminUser));
+                        
+                        // Set current user
+                        currentUser = adminUser;
+                        isAdmin = true;
+                        
+                        // Update UI
+                        updateAuthUI();
+                        closeAuthModal();
+                        
+                        // Show setup section
+                        setupSection.style.display = 'block';
+                        firstTimeSetupSection.style.display = 'none';
+                        
+                        showNotification('Admin registered successfully. Please configure the system.', 'success');
+                        return;
+                    } catch (error) {
+                        console.error('Admin registration error:', error);
+                        showNotification('Error registering admin: ' + error.message, 'error');
                         return;
                     }
+                }
+                
+                // Normal registration process (when system is configured)
+                try {
+                    // Load existing users
+                    const users = await loadUsersFromDb();
                     
-                    // Simple password check (in a real app, use proper hashing)
-                    if (user.password !== password) {
-                        showNotification('Invalid password', 'error');
-                        return;
-                    }
-                    
-                    // Set current user
-                    currentUser = {
-                        username: user.username,
-                        email: user.email,
-                        realtimeGistId: user.realtimeGistId || ''
-                    };
-                    
-                    // Save to local storage
-                    localStorage.setItem('lorcanaCurrentUser', JSON.stringify(currentUser));
-                    
-                    // Check if user is admin
-                    isAdmin = username === 'admin';
-                    
-                    // Update UI
-                    updateAuthUI();
-                    closeAuthModal();
-                    
-                    // Load user's collection
-                    loadUserCollection();
-                    
-                    // Add activity
-                    addActivity(`${username} logged in`);
-                    
-                    showNotification('Login successful', 'success');
-                })
-                .catch(error => {
-                    showNotification('Error logging in: ' + error.message, 'error');
-                    console.error('Error logging in:', error);
-                });
-        }
-
-        // Handle registration
-        function handleRegister() {
-            const username = registerUsername.value.trim();
-            const email = registerEmail.value.trim();
-            const password = registerPassword.value;
-            const confirmPasswordVal = confirmPassword.value;
-            
-            if (!username || !email || !password) {
-                showNotification('Please fill in all fields', 'error');
-                return;
-            }
-            
-            if (password !== confirmPasswordVal) {
-                showNotification('Passwords do not match', 'error');
-                return;
-            }
-            
-            // Special case for first-time admin registration
-            if (!isConfigured && username !== 'admin') {
-                showNotification('System not configured. Only admin registration is allowed at this time.', 'error');
-                return;
-            }
-            
-            // Load users from database (if possible)
-            loadUsersFromDb()
-                .then(users => {
                     // Check if username already exists
                     if (users.find(u => u.username === username)) {
                         showNotification('Username already exists', 'error');
@@ -2369,78 +2386,107 @@
                     const newUser = {
                         username: username,
                         email: email,
-                        password: password, // In a real app, hash this password
-                        createdAt: new Date().toISOString(),
-                        lastActivity: new Date().toISOString(),
-                        realtimeGistId: '' // Will be set when user first saves to cloud
+                        password: password, // In a real app, this should be hashed
+                        isAdmin: false,
+                        createdAt: new Date().toISOString()
                     };
                     
-                    // Add user to database
+                    // Add to users array
                     users.push(newUser);
                     
-                    return saveUsersToDb(users);
-                })
-                .then(() => {
-                    // Set current user
-                    currentUser = {
-                        username: username,
-                        email: email,
-                        realtimeGistId: ''
-                    };
+                    // Save to database
+                    await saveUsersToDb(users);
                     
-                    // Save to local storage
-                    localStorage.setItem('lorcanaCurrentUser', JSON.stringify(currentUser));
+                    // Log in the new user
+                    currentUser = newUser;
+                    isAdmin = newUser.isAdmin;
                     
-                    // Check if user is admin
-                    isAdmin = username === 'admin';
+                    // Save to localStorage
+                    localStorage.setItem('currentUser', JSON.stringify(currentUser));
                     
                     // Update UI
                     updateAuthUI();
                     closeAuthModal();
+                    loadUserCollection(); // Load the user's collection
                     
-                    // Initialize user's collection
-                    cards = [...initialCards];
-                    filteredCards = [...cards];
-                    renderTable();
-                    updateStats();
-                    
-                    // Save initial data to local storage
-                    saveDataToLocalStorage();
-                    
-                    // Add activity
-                    addActivity(`${username} registered`);
+                    // Start real-time sync if configured
+                    if (isConfigured) {
+                        startRealtimeSync();
+                    }
                     
                     showNotification('Registration successful', 'success');
-                })
-                .catch(error => {
+                } catch (error) {
+                    console.error('Registration error:', error);
                     showNotification('Error registering: ' + error.message, 'error');
-                    console.error('Error registering:', error);
-                });
-        }
-
-        // Logout user
-        function logoutUser() {
-            if (currentUser) {
-                const username = currentUser.username;
+                }
+            } else { // Login mode
+                const username = loginUsername.value.trim();
+                const password = loginPassword.value;
                 
-                // Clear current user
-                currentUser = null;
-                isAdmin = false;
-                localStorage.removeItem('lorcanaCurrentUser');
+                if (!username || !password) {
+                    showNotification('Please enter username and password', 'error');
+                    return;
+                }
                 
-                // Update UI
-                updateAuthUI();
-                
-                // Reset to default card collection
-                cards = [...initialCards];
-                filteredCards = [...cards];
-                renderTable();
-                updateStats();
-                
-                // Add activity
-                addActivity(`${username} logged out`);
-                
-                showNotification('Logged out successfully', 'success');
+                try {
+                    // Special handling for temporary admin user during setup
+                    if (isFirstTime && username === 'admin') {
+                        const tempAdminUserJSON = localStorage.getItem('tempAdminUser');
+                        if (tempAdminUserJSON) {
+                            const tempAdminUser = JSON.parse(tempAdminUserJSON);
+                            if (tempAdminUser.password === password) {
+                                currentUser = tempAdminUser;
+                                isAdmin = true;
+                                
+                                // Save to localStorage
+                                localStorage.setItem('currentUser', JSON.stringify(currentUser));
+                                
+                                updateAuthUI();
+                                closeAuthModal();
+                                setupSection.style.display = 'block';
+                                firstTimeSetupSection.style.display = 'none';
+                                showNotification('Login successful', 'success');
+                                return;
+                            }
+                        }
+                    }
+                    
+                    // Normal login process (when system is configured)
+                    const users = await loadUsersFromDb();
+                    const user = users.find(u => u.username === username);
+                    
+                    if (!user) {
+                        showNotification('User not found', 'error');
+                        return;
+                    }
+                    
+                    if (user.password !== password) { // In a real app, use proper password comparison
+                        showNotification('Invalid password', 'error');
+                        return;
+                    }
+                    
+                    // Set current user
+                    currentUser = user;
+                    isAdmin = user.isAdmin;
+                    
+                    // Save to localStorage
+                    localStorage.setItem('currentUser', JSON.stringify(currentUser));
+                    
+                    // Update UI
+                    updateAuthUI();
+                    closeAuthModal();
+                    loadUserCollection(); // Load the user's collection
+                    
+                    // Start real-time sync if configured
+                    if (isConfigured) {
+                        startRealtimeSync();
+                    }
+                    
+                    showNotification('Login successful', 'success');
+                } catch (error) {
+                    console.error('Login error:', error);
+                    showNotification('Error logging in: ' + error.message, 'error');
+                }
             }
         }
 
@@ -2461,7 +2507,7 @@
             setupModal.style.display = 'none';
         }
 
-        // Save setup
+        // Save setup configuration
         async function saveSetup() {
             const userDbToken = setupUserDbTokenInput.value.trim();
             const userDbGistId = setupUserDbGistIdInput.value.trim();
@@ -2470,74 +2516,129 @@
             const syncInterval = parseInt(setupSyncIntervalInput.value);
             
             if (!userDbToken || !realtimeToken) {
-                showNotification('Please fill in all token fields', 'error');
+                showNotification('Please provide both tokens', 'error');
                 return;
             }
             
-            // Update settings
-            userDbSettings = {
-                token: userDbToken,
-                gistId: userDbGistId
-            };
-            realtimeSettings = {
-                token: realtimeToken,
-                gistId: realtimeGistId,
-                syncInterval: syncInterval,
-                lastSync: 0,
-                syncTimer: null
-            };
-            
-            // Save to local storage
-            localStorage.setItem('userDbToken', userDbToken);
-            localStorage.setItem('userDbGistId', userDbGistId);
-            localStorage.setItem('realtimeToken', realtimeToken);
-            localStorage.setItem('realtimeGistId', realtimeGistId);
-            localStorage.setItem('syncInterval', syncInterval.toString());
-            
             try {
-                // Load existing users
-                const users = await loadUsersFromDb();
-                
-                // Create or update configuration entry
-                const configIndex = users.findIndex(u => u.username === '__system_config__');
-                const configEntry = {
-                    username: '__system_config__',
-                    config: {
-                        userDbSettings: userDbSettings,
-                        realtimeSettings: realtimeSettings
-                    }
+                // Update settings
+                userDbSettings = {
+                    token: userDbToken,
+                    gistId: userDbGistId
                 };
                 
-                if (configIndex !== -1) {
-                    users[configIndex] = configEntry;
-                } else {
-                    users.push(configEntry);
+                realtimeSettings = {
+                    token: realtimeToken,
+                    gistId: realtimeGistId,
+                    syncInterval: syncInterval,
+                    lastSync: 0,
+                    syncTimer: null
+                };
+                
+                // Save to localStorage
+                localStorage.setItem('userDbToken', userDbToken);
+                localStorage.setItem('userDbGistId', userDbGistId);
+                localStorage.setItem('realtimeToken', realtimeToken);
+                localStorage.setItem('realtimeGistId', realtimeGistId);
+                localStorage.setItem('syncInterval', syncInterval.toString());
+                
+                // Create configuration object
+                const config = {
+                    userDbSettings: userDbSettings,
+                    realtimeSettings: realtimeSettings
+                };
+                
+                // Check if there's a temporary admin user
+                const tempAdminUserJSON = localStorage.getItem('tempAdminUser');
+                let users = [];
+                
+                if (tempAdminUserJSON) {
+                    // Add the temporary admin user to the users array
+                    const tempAdminUser = JSON.parse(tempAdminUserJSON);
+                    users.push(tempAdminUser);
+                    
+                    // Remove the temporary admin user from localStorage
+                    localStorage.removeItem('tempAdminUser');
                 }
                 
-                // Save users back to database
+                // Create the system configuration user
+                const configUser = {
+                    username: '__system_config__',
+                    config: config
+                };
+                
+                users.push(configUser);
+                
+                // Save users to the database (this will create the gist if needed)
                 await saveUsersToDb(users);
                 
-                // Update configuration status
-                isConfigured = true;
-                isFirstTime = false;
-                updateCloudStatus();
-                updateSetupSectionVisibility();
-                
-                // If user is logged in, restart real-time sync
-                if (currentUser) {
-                    stopRealtimeSync();
-                    startRealtimeSync();
+                // Create real-time data gist if needed
+                if (!realtimeGistId) {
+                    const realtimeData = {
+                        activities: []
+                    };
+                    
+                    const response = await fetch('https://api.github.com/gists', {
+                        method: 'POST',
+                        headers: {
+                            'Authorization': `token ${realtimeToken}`,
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            description: 'Lorcana Card Tracker Real-time Data',
+                            public: false,
+                            files: {
+                                'realtime_data.json': {
+                                    content: JSON.stringify(realtimeData, null, 2)
+                                }
+                            }
+                        })
+                    });
+                    
+                    if (!response.ok) {
+                        throw new Error(`GitHub API error: ${response.status}`);
+                    }
+                    
+                    const gistData = await response.json();
+                    realtimeSettings.gistId = gistData.id;
+                    localStorage.setItem('realtimeGistId', gistData.id);
                 }
                 
-                closeSetupModal();
-                showNotification('Configuration saved', 'success');
+                // Update system status
+                isConfigured = true;
+                isFirstTime = false;
                 
-                // Add activity
-                addActivity('System configuration updated');
+                // Update UI
+                updateCloudStatus();
+                updateSetupSectionVisibility();
+                closeSetupModal();
+                
+                // Start real-time sync
+                startRealtimeSync();
+                
+                showNotification('Configuration saved successfully', 'success');
             } catch (error) {
+                console.error('Setup error:', error);
                 showNotification('Error saving configuration: ' + error.message, 'error');
-                console.error('Error saving configuration:', error);
             }
+        }
+
+        // Show notification
+        function showNotification(message, type = 'success') {
+            notification.textContent = message;
+            notification.className = 'notification';
+            
+            if (type === 'error') {
+                notification.classList.add('error');
+            } else if (type === 'warning') {
+                notification.classList.add('warning');
+            }
+            
+            notification.classList.add('show');
+            
+            setTimeout(() => {
+                notification.classList.remove('show');
+            }, 3000);
         }
 
         // Initialize the app when the DOM is loaded
