@@ -1107,7 +1107,7 @@
         let isConfigured = false;
         let isAdmin = false; // Track if current user is admin
         let isFirstTime = true; // Track if this is the first time setup
-        let publicConfigGistId = 'f49fc95fb204a5ed6c0d13e09663976e'; // ID of the public configuration gist
+        let publicConfigGistId = ''; // ID of the public configuration gist
 
         // DOM elements
         const cardTableBody = document.getElementById('cardTableBody');
@@ -1186,7 +1186,7 @@
             try {
                 // We'll use a fixed gist ID for the public configuration pointer
                 // This gist will contain the ID of the actual configuration gist
-                const publicConfigPointerId = 'YOUR_PUBLIC_CONFIG_POINTER_ID'; // Replace with your actual public config pointer gist ID
+                const publicConfigPointerId = '91b7e8259c49466d4e4c60f20ca5ff06'; // Replace with your actual public config pointer gist ID
                 
                 if (publicConfigPointerId) {
                     const pointerResponse = await fetch(`https://api.github.com/gists/${publicConfigPointerId}`);
@@ -2817,3 +2817,4 @@
 </body>
 
 </html>
+
