@@ -1187,7 +1187,7 @@
             try {
                 // We'll use a fixed gist ID for the public configuration pointer
                 // This gist will contain the ID of the actual configuration gist
-                const publicConfigPointerId = 'YOUR_PUBLIC_CONFIG_POINTER_ID'; // Replace with your actual public config pointer gist ID
+                const publicConfigPointerId = '83c44466b534a95dbd5432b3962c39f7'; // Replace with your actual public config pointer gist ID
                 
                 console.log('Checking configuration with pointer ID:', publicConfigPointerId);
                 
@@ -2758,7 +2758,7 @@
                 };
                 
                 // Try to update the existing pointer gist first
-                const pointerUpdateResponse = await fetch(`https://api.github.com/gists/YOUR_PUBLIC_CONFIG_POINTER_ID`, {
+                const pointerUpdateResponse = await fetch(`https://api.github.com/gists/83c44466b534a95dbd5432b3962c39f7`, {
                     method: 'PATCH',
                     headers: {
                         'Authorization': `token ${userDbToken}`,
@@ -2846,3 +2846,4 @@
     </script>
 </body>
 </html>
+
