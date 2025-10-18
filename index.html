@@ -709,16 +709,6 @@
             margin-bottom: 15px;
         }
 
-        .debug-info {
-            margin-top: 20px;
-            padding: 15px;
-            background-color: #f8f9fa;
-            border-radius: 8px;
-            text-align: center;
-            font-family: monospace;
-            font-size: 14px;
-        }
-
         @keyframes spin {
             to { transform: rotate(360deg); }
         }
@@ -963,11 +953,6 @@
             <button id="reconfigureBtn" class="success-btn">Enter Configuration Tokens</button>
         </div>
         
-        <div id="debugInfo" class="debug-info" style="display: none;">
-            <h3>Debug Information</h3>
-            <pre id="debugContent"></pre>
-        </div>
-        
         <div id="debugPanel" class="debug-panel">
             <h3>Debug Information</h3>
             <div id="csvPreview" class="csv-preview"></div>
@@ -1123,6 +1108,7 @@
         let isAdmin = false; // Track if current user is admin
         let isFirstTime = true; // Track if this is the first time setup
         let publicConfigGistId = ''; // ID of the public configuration gist
+        let configData = null; // Store the configuration data
 
         // DOM elements
         const cardTableBody = document.getElementById('cardTableBody');
@@ -1195,48 +1181,39 @@
         const registerEmail = document.getElementById('registerEmail');
         const registerPassword = document.getElementById('registerPassword');
         const confirmPassword = document.getElementById('confirmPassword');
-        const debugInfoDiv = document.getElementById('debugInfo');
-        const debugContent = document.getElementById('debugContent');
 
         // Check if the tracker is configured
         async function checkConfiguration() {
             try {
                 // We'll use a fixed gist ID for the public configuration pointer
                 // This gist will contain the ID of the actual configuration gist
-                const publicConfigPointerId = '99482ee20b89903e2c5ac6f3f2b93693'; // Replace with your actual public config pointer gist ID
+                const publicConfigPointerId = 'YOUR_PUBLIC_CONFIG_POINTER_ID'; // Replace with your actual public config pointer gist ID
                 
                 console.log('Checking configuration with pointer ID:', publicConfigPointerId);
-                debugContent.textContent = 'Checking configuration with pointer ID: ' + publicConfigPointerId;
-                document.getElementById('debugInfo').style.display = 'block';
                 
                 if (publicConfigPointerId) {
                     const pointerResponse = await fetch(`https://api.github.com/gists/${publicConfigPointerId}`);
                     
                     if (!pointerResponse.ok) {
-                        console.error('Failed to fetch pointer gist:', pointerResponse.status, pointerResponse.statusText);
-                        debugContent.textContent += '\nFailed to fetch pointer gist: ' + pointerResponse.status + ' ' + pointerResponse.statusText;
+                        console.log('Failed to fetch pointer gist:', pointerResponse.status, pointerResponse.statusText);
                         throw new Error(`Failed to fetch pointer gist: ${pointerResponse.status}`);
                     }
                     
                     const pointerGistData = await pointerResponse.json();
                     console.log('Pointer gist data:', pointerGistData);
-                    debugContent.textContent += '\nPointer gist data: ' + JSON.stringify(pointerGistData, null, 2);
                     
                     const pointerFile = pointerGistData.files['config_pointer.json'];
                     
                     if (!pointerFile) {
-                        console.error('Pointer gist does not contain config_pointer.json');
-                        debugContent.textContent += '\nPointer gist does not contain config_pointer.json';
+                        console.log('Pointer gist does not contain config_pointer.json');
                         throw new Error('Pointer gist does not contain config_pointer.json');
                     }
                     
                     const pointerData = JSON.parse(pointerFile.content);
                     console.log('Pointer data:', pointerData);
-                    debugContent.textContent += '\nPointer data: ' + JSON.stringify(pointerData, null, 2);
                     
                     if (!pointerData.configGistId) {
-                        console.error('Pointer data does not contain configGistId');
-                        debugContent.textContent += '\nPointer data does not contain configGistId';
+                        console.log('Pointer data does not contain configGistId');
                         throw new Error('Pointer data does not contain configGistId');
                     }
                     
@@ -1244,52 +1221,45 @@
                     const configResponse = await fetch(`https://api.github.com/gists/${pointerData.configGistId}`);
                     
                     if (!configResponse.ok) {
-                        console.error('Failed to fetch config gist:', configResponse.status, configResponse.statusText);
-                        debugContent.textContent += '\nFailed to fetch config gist: ' + configResponse.status + ' ' + configResponse.statusText;
+                        console.log('Failed to fetch config gist:', configResponse.status, configResponse.statusText);
                         throw new Error(`Failed to fetch config gist: ${configResponse.status}`);
                     }
                     
                     const configGistData = await configResponse.json();
                     console.log('Config gist data:', configGistData);
-                    debugContent.textContent += '\nConfig gist data: ' + JSON.stringify(configGistData, null, 2);
                     
                     const configFile = configGistData.files['config.json'];
                     
                     if (!configFile) {
-                        console.error('Config gist does not contain config.json');
-                        debugContent.textContent += '\nConfig gist does not contain config.json';
+                        console.log('Config gist does not contain config.json');
                         throw new Error('Config gist does not contain config.json');
                     }
                     
-                    const publicConfig = JSON.parse(configFile.content);
-                    console.log('Public config:', publicConfig);
-                    debugContent.textContent += '\nPublic config: ' + JSON.stringify(publicConfig, null, 2);
+                    configData = JSON.parse(configFile.content);
+                    console.log('Public config:', configData);
                     
-                    if (publicConfig.configured) {
+                    if (configData.configured) {
                         // System is configured
                         isConfigured = true;
                         isFirstTime = false;
                         
                         // Store the gist IDs from the public config
-                        userDbSettings.gistId = publicConfig.userDbGistId;
-                        realtimeSettings.gistId = publicConfig.realtimeGistId;
+                        userDbSettings.gistId = configData.userDbGistId;
+                        realtimeSettings.gistId = configData.realtimeGistId;
                         
                         // Store the public config gist ID
                         publicConfigGistId = pointerData.configGistId;
                         
                         console.log('System is configured. User DB Gist ID:', userDbSettings.gistId, 'Realtime Gist ID:', realtimeSettings.gistId);
-                        debugContent.textContent += '\nSystem is configured. User DB Gist ID: ' + userDbSettings.gistId + ', Realtime Gist ID: ' + realtimeSettings.gistId;
                         
                         updateCloudStatus();
                         updateSetupSectionVisibility();
                         return;
                     } else {
                         console.log('System is not configured (publicConfig.configured is false)');
-                        debugContent.textContent += '\nSystem is not configured (publicConfig.configured is false)';
                     }
                 } else {
                     console.log('No public config pointer ID provided');
-                    debugContent.textContent += '\nNo public config pointer ID provided';
                 }
                 
                 // If we get here, either no public config was found or it indicates not configured
@@ -1300,7 +1270,6 @@
                 updateSetupSectionVisibility();
             } catch (error) {
                 console.error('Error checking configuration:', error);
-                debugContent.textContent += '\nError checking configuration: ' + error.message;
                 isConfigured = false;
                 isFirstTime = true;
                 updateCloudStatus();
@@ -2498,7 +2467,7 @@
                 }
                 
                 // Normal registration process (when system is configured)
-                if (!isConfigured || !userDbSettings.token) {
+                if (!isConfigured) {
                     showNotification('System is not configured for registration', 'error');
                     return;
                 }
@@ -2598,7 +2567,7 @@
                     }
                     
                     // Normal login process (when system is configured)
-                    if (!isConfigured || !userDbSettings.token) {
+                    if (!isConfigured) {
                         showNotification('System is not configured for login', 'error');
                         return;
                     }
@@ -2789,7 +2758,7 @@
                 };
                 
                 // Try to update the existing pointer gist first
-                const pointerUpdateResponse = await fetch(`https://api.github.com/gists/99482ee20b89903e2c5ac6f3f2b93693`, {
+                const pointerUpdateResponse = await fetch(`https://api.github.com/gists/YOUR_PUBLIC_CONFIG_POINTER_ID`, {
                     method: 'PATCH',
                     headers: {
                         'Authorization': `token ${userDbToken}`,
@@ -2877,4 +2846,3 @@
     </script>
 </body>
 </html>
-
