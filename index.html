@@ -1056,43 +1056,6 @@
         </div>
     </div>
 
-    <!-- Add User Modal (Admin Only) -->
-    <div id="addUserModal" class="modal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h2>Add New User</h2>
-                <span class="close">&times;</span>
-            </div>
-            <div class="modal-body">
-                <div class="form-group">
-                    <label for="newUsername">Username</label>
-                    <input type="text" id="newUsername" placeholder="Enter username">
-                </div>
-                <div class="form-group">
-                    <label for="newEmail">Email</label>
-                    <input type="email" id="newEmail" placeholder="Enter email">
-                </div>
-                <div class="form-group">
-                    <label for="newPassword">Password</label>
-                    <input type="password" id="newPassword" placeholder="Enter password">
-                </div>
-                <div class="form-group">
-                    <label for="confirmNewPassword">Confirm Password</label>
-                    <input type="password" id="confirmNewPassword" placeholder="Confirm password">
-                </div>
-                <div class="form-group">
-                    <label>
-                        <input type="checkbox" id="makeAdmin"> Make this user an administrator
-                    </label>
-                </div>
-            </div>
-            <div class="modal-footer">
-                <button id="cancelAddUser" class="secondary-btn">Cancel</button>
-                <button id="submitAddUser" class="success-btn">Add User</button>
-            </div>
-        </div>
-    </div>
-
     <script>
         // Initial card data from the provided CSV
         const initialCards = [
@@ -1189,7 +1152,6 @@
         const closeDebugBtn = document.getElementById('closeDebug');
         const authModal = document.getElementById('authModal');
         const setupModal = document.getElementById('setupModal');
-        const addUserModal = document.getElementById('addUserModal');
         const cloudStatusIndicator = document.getElementById('cloudStatusIndicator');
         const cloudStatusText = document.getElementById('cloudStatusText');
         const realTimeStatus = document.getElementById('realTimeStatus');
@@ -1219,26 +1181,17 @@
         const registerEmail = document.getElementById('registerEmail');
         const registerPassword = document.getElementById('registerPassword');
         const confirmPassword = document.getElementById('confirmPassword');
-        
-        // Add User Modal elements
-        const newUsername = document.getElementById('newUsername');
-        const newEmail = document.getElementById('newEmail');
-        const newPassword = document.getElementById('newPassword');
-        const confirmNewPassword = document.getElementById('confirmNewPassword');
-        const makeAdmin = document.getElementById('makeAdmin');
-        const cancelAddUserBtn = document.getElementById('cancelAddUser');
-        const submitAddUserBtn = document.getElementById('submitAddUser');
 
         // Check if the tracker is configured
         async function checkConfiguration() {
             try {
                 // We'll use a fixed gist ID for the public configuration pointer
                 // This gist will contain the ID of the actual configuration gist
-                const publicConfigPointerId = '9b5c44dd09c745348591e435ad0eecc0'; // Replace with your actual public config pointer gist ID
+                const publicConfigPointerId = 'YOUR_PUBLIC_CONFIG_POINTER_ID'; // Replace with your actual public config pointer gist ID
                 
                 console.log('Checking configuration with pointer ID:', publicConfigPointerId);
                 
-                if (publicConfigPointerId && publicConfigPointerId !== '9b5c44dd09c745348591e435ad0eecc0') {
+                if (publicConfigPointerId && publicConfigPointerId !== 'YOUR_PUBLIC_CONFIG_POINTER_ID') {
                     const pointerResponse = await fetch(`https://api.github.com/gists/${publicConfigPointerId}`);
                     
                     if (!pointerResponse.ok) {
@@ -1441,7 +1394,6 @@
                 btn.addEventListener('click', () => {
                     authModal.style.display = 'none';
                     setupModal.style.display = 'none';
-                    addUserModal.style.display = 'none';
                 });
             });
             
@@ -1494,13 +1446,6 @@
             });
             
             saveSetupBtn.addEventListener('click', saveSetup);
-            
-            // Add User modal
-            cancelAddUserBtn.addEventListener('click', () => {
-                addUserModal.style.display = 'none';
-            });
-            
-            submitAddUserBtn.addEventListener('click', addNewUser);
             
             // Card table
             document.querySelectorAll('.card-table th.sortable').forEach(th => {
@@ -1556,9 +1501,6 @@
                 }
                 if (event.target === setupModal) {
                     setupModal.style.display = 'none';
-                }
-                if (event.target === addUserModal) {
-                    addUserModal.style.display = 'none';
                 }
             });
         }
@@ -1714,82 +1656,6 @@
             }
         }
 
-        // Add new user (admin only)
-        async function addNewUser() {
-            const username = newUsername.value.trim();
-            const email = newEmail.value.trim();
-            const password = newPassword.value;
-            const confirm = confirmNewPassword.value;
-            const admin = makeAdmin.checked;
-            
-            if (!username || !email || !password) {
-                showNotification('All fields are required', 'error');
-                return;
-            }
-            
-            if (password !== confirm) {
-                showNotification('Passwords do not match', 'error');
-                return;
-            }
-            
-            try {
-                // Check if username already exists
-                if (allUsers.some(u => u.username === username)) {
-                    showNotification('Username already exists', 'error');
-                    return;
-                }
-                
-                // Create new user object
-                const newUser = {
-                    id: Date.now().toString(),
-                    username,
-                    email,
-                    passwordHash: await hashPassword(password),
-                    createdAt: new Date().toISOString(),
-                    lastActivity: new Date().toISOString(),
-                    isAdmin: admin
-                };
-                
-                // Add to users array
-                allUsers.push(newUser);
-                
-                // Save users to localStorage
-                localStorage.setItem('lorcanaUsers', JSON.stringify(allUsers));
-                
-                // If system is configured and we have tokens, save to cloud
-                if (isConfigured && userDbSettings.token) {
-                    try {
-                        await saveUsersToDb();
-                    } catch (error) {
-                        console.error('Error saving users to cloud:', error);
-                        // Continue with local registration even if cloud save fails
-                    }
-                }
-                
-                // Add activity
-                addActivity(`Admin ${currentUser.username} created new user: ${username}`);
-                
-                // Update UI
-                refreshUsers();
-                
-                // Close modal
-                addUserModal.style.display = 'none';
-                
-                // Clear form
-                newUsername.value = '';
-                newEmail.value = '';
-                newPassword.value = '';
-                confirmNewPassword.value = '';
-                makeAdmin.checked = false;
-                
-                showNotification(`User ${username} created successfully!`, 'success');
-                
-            } catch (error) {
-                console.error('Error adding user:', error);
-                showNotification(`Error adding user: ${error.message}`, 'error');
-            }
-        }
-
         // Update authentication UI
         function updateAuthUI() {
             if (currentUser) {
@@ -1799,19 +1665,11 @@
                         <div>${currentUser.username}</div>
                         <div class="online-indicator online"></div>
                     </div>
-                    ${isAdmin ? '<button id="addUserBtn" class="secondary-btn">Add User</button>' : ''}
                     <button id="logoutBtn" class="secondary-btn">Logout</button>
                 `;
                 
                 // Add event listeners to new buttons
-                const addUserBtn = document.getElementById('addUserBtn');
                 const logoutBtn = document.getElementById('logoutBtn');
-                
-                if (addUserBtn) {
-                    addUserBtn.addEventListener('click', () => {
-                        addUserModal.style.display = 'block';
-                    });
-                }
                 
                 if (logoutBtn) {
                     logoutBtn.addEventListener('click', logout);
@@ -1876,12 +1734,12 @@
                 const realtimeTokenValid = await validateToken(realtimeToken);
                 
                 if (!userDbTokenValid) {
-                    showNotification('User database token is invalid or lacks gist scope', 'error');
+                    showNotification('User database token is invalid or lacks gist scope. Please create a new token with gist scope.', 'error');
                     return;
                 }
                 
                 if (!realtimeTokenValid) {
-                    showNotification('Real-time token is invalid or lacks gist scope', 'error');
+                    showNotification('Real-time token is invalid or lacks gist scope. Please create a new token with gist scope.', 'error');
                     return;
                 }
             } catch (error) {
@@ -1999,7 +1857,10 @@
                 lastUpdated: new Date().toISOString()
             };
             
-            const pointerResponse = await fetch(`https://api.github.com/gists/YOUR_PUBLIC_CONFIG_POINTER_ID`, {
+            // Make sure to replace YOUR_PUBLIC_CONFIG_POINTER_ID with your actual gist ID
+            const pointerGistId = 'YOUR_PUBLIC_CONFIG_POINTER_ID'; // Replace with your actual gist ID
+            
+            const pointerResponse = await fetch(`https://api.github.com/gists/${pointerGistId}`, {
                 method: 'PATCH',
                 headers: {
                     'Authorization': `token ${token}`,
@@ -2024,6 +1885,7 @@
         // Validate GitHub token
         async function validateToken(token) {
             try {
+                // First, check if the token is valid by getting the user
                 const response = await fetch('https://api.github.com/user', {
                     headers: {
                         'Authorization': `token ${token}`
@@ -2034,18 +1896,41 @@
                     return false;
                 }
                 
-                const userData = await response.json();
+                // Now, try to create a temporary gist to check gist scope
+                const testGist = {
+                    description: "Temporary gist for token validation",
+                    public: false,
+                    files: {
+                        "test.txt": {
+                            content: "This is a test"
+                        }
+                    }
+                };
                 
-                // Check if token has gist scope
-                const scopesResponse = await fetch('https://api.github.com/user', {
+                const createResponse = await fetch('https://api.github.com/gists', {
+                    method: 'POST',
                     headers: {
                         'Authorization': `token ${token}`,
-                        'X-OAuth-Scopes': ''
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(testGist)
+                });
+                
+                if (!createResponse.ok) {
+                    return false;
+                }
+                
+                const gistData = await createResponse.json();
+                
+                // Delete the temporary gist
+                await fetch(`https://api.github.com/gists/${gistData.id}`, {
+                    method: 'DELETE',
+                    headers: {
+                        'Authorization': `token ${token}`
                     }
                 });
                 
-                const scopesHeader = scopesResponse.headers.get('X-OAuth-Scopes');
-                return scopesHeader && scopesHeader.includes('gist');
+                return true;
             } catch (error) {
                 console.error('Token validation error:', error);
                 return false;
@@ -3046,4 +2931,3 @@
     </script>
 </body>
 </html>
-
