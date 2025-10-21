@@ -1973,111 +1973,131 @@
         }
 
         // Save users to database
-        async function saveUsersToDb() {
-            if (!userDbSettings.token) {
-                throw new Error('User database token not configured. Please ask the administrator to configure the system.');
-            }
-            
-            try {
-                let response;
-                
-                if (userDbSettings.gistId) {
-                    // Update existing gist
-                    response = await fetch(`https://api.github.com/gists/${userDbSettings.gistId}`, {
-                        method: 'PATCH',
-                        headers: {
-                            'Authorization': `token ${userDbSettings.token}`,
-                            'Content-Type': 'application/json'
-                        },
-                        body: JSON.stringify({
-                            files: {
-                                'users.json': {
-                                    content: JSON.stringify(allUsers, null, 2)
-                                }
-                            }
-                        })
-                    });
-                } else {
-                    // Create new gist
-                    response = await fetch('https://api.github.com/gists', {
-                        method: 'POST',
-                        headers: {
-                            'Authorization': `token ${userDbSettings.token}`,
-                            'Content-Type': 'application/json'
-                        },
-                        body: JSON.stringify({
-                            description: 'Lorcana Tracker User Database',
-                            public: true,
-                            files: {
-                                'users.json': {
-                                    content: JSON.stringify(allUsers, null, 2)
-                                }
-                            }
-                        })
-                    });
-                    
-                    if (response.ok) {
-                        const gistData = await response.json();
-                        userDbSettings.gistId = gistData.id;
-                        
-                        // Update config
-                        localStorage.setItem('lorcanaConfig', JSON.stringify({
-                            userDbToken: userDbSettings.token,
-                            realtimeToken: realtimeSettings.token,
-                            userDbGistId: userDbSettings.gistId,
-                            realtimeGistId: realtimeSettings.gistId
-                        }));
-                        
-                        // Update config gist
-                        if (publicConfigGistId) {
-                            await fetch(`https://api.github.com/gists/${publicConfigGistId}`, {
-                                method: 'PATCH',
-                                headers: {
-                                    'Authorization': `token ${realtimeSettings.token}`,
-                                    'Content-Type': 'application/json'
-                                },
-                                body: JSON.stringify({
-                                    files: {
-                                        'config.json': {
-                                            content: JSON.stringify({
-                                                configured: true,
-                                                userDbGistId: userDbSettings.gistId,
-                                                realtimeGistId: realtimeSettings.gistId,
-                                                lastUpdated: new Date().toISOString()
-                                            }, null, 2)
-                                        }
-                                    }
-                                })
-                            });
+async function saveUsersToDb() {
+    if (!userDbSettings.token) {
+        throw new Error('User database token not configured. Please ask the administrator to configure the system.');
+    }
+    
+    try {
+        let response;
+        let gistData;
+        
+        if (userDbSettings.gistId) {
+            // Update existing gist
+            response = await fetch(`https://api.github.com/gists/${userDbSettings.gistId}`, {
+                method: 'PATCH',
+                headers: {
+                    'Authorization': `token ${userDbSettings.token}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    files: {
+                        'users.json': {
+                            content: JSON.stringify(allUsers, null, 2)
                         }
                     }
+                })
+            });
+            
+            if (!response.ok) {
+                const errorData = await response.json();
+                let errorMessage = `GitHub API error: ${response.status}`;
+                
+                if (response.status === 401) {
+                    errorMessage += ' (Unauthorized: Check your token)';
+                } else if (response.status === 403) {
+                    errorMessage += ' (Forbidden: Token may lack gist scope or be revoked)';
+                } else if (response.status === 404) {
+                    errorMessage += ' (Not Found: Gist ID may be incorrect)';
                 }
                 
-                if (!response.ok) {
-                    const errorData = await response.json();
-                    let errorMessage = `GitHub API error: ${response.status}`;
-                    
-                    if (response.status === 401) {
-                        errorMessage += ' (Unauthorized: Check your token)';
-                    } else if (response.status === 403) {
-                        errorMessage += ' (Forbidden: Token may lack gist scope or be revoked)';
-                    } else if (response.status === 404) {
-                        errorMessage += ' (Not Found: Gist ID may be incorrect)';
-                    }
-                    
-                    if (errorData.message) {
-                        errorMessage += ` - ${errorData.message}`;
-                    }
-                    
-                    throw new Error(errorMessage);
+                if (errorData.message) {
+                    errorMessage += ` - ${errorData.message}`;
                 }
                 
-                return await response.json();
-            } catch (error) {
-                console.error('Error saving users to database:', error);
-                throw error;
+                throw new Error(errorMessage);
+            }
+            
+            gistData = await response.json();
+        } else {
+            // Create new gist
+            response = await fetch('https://api.github.com/gists', {
+                method: 'POST',
+                headers: {
+                    'Authorization': `token ${userDbSettings.token}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    description: 'Lorcana Tracker User Database',
+                    public: true,
+                    files: {
+                        'users.json': {
+                            content: JSON.stringify(allUsers, null, 2)
+                        }
+                    }
+                })
+            });
+            
+            if (!response.ok) {
+                const errorData = await response.json();
+                let errorMessage = `GitHub API error: ${response.status}`;
+                
+                if (response.status === 401) {
+                    errorMessage += ' (Unauthorized: Check your token)';
+                } else if (response.status === 403) {
+                    errorMessage += ' (Forbidden: Token may lack gist scope or be revoked)';
+                } else if (response.status === 404) {
+                    errorMessage += ' (Not Found: Gist ID may be incorrect)';
+                }
+                
+                if (errorData.message) {
+                    errorMessage += ` - ${errorData.message}`;
+                }
+                
+                throw new Error(errorMessage);
+            }
+            
+            gistData = await response.json();
+            userDbSettings.gistId = gistData.id;
+            
+            // Update config
+            localStorage.setItem('lorcanaConfig', JSON.stringify({
+                userDbToken: userDbSettings.token,
+                realtimeToken: realtimeSettings.token,
+                userDbGistId: userDbSettings.gistId,
+                realtimeGistId: realtimeSettings.gistId
+            }));
+            
+            // Update config gist
+            if (publicConfigGistId) {
+                await fetch(`https://api.github.com/gists/${publicConfigGistId}`, {
+                    method: 'PATCH',
+                    headers: {
+                        'Authorization': `token ${realtimeSettings.token}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        files: {
+                            'config.json': {
+                                content: JSON.stringify({
+                                    configured: true,
+                                    userDbGistId: userDbSettings.gistId,
+                                    realtimeGistId: realtimeSettings.gistId,
+                                    lastUpdated: new Date().toISOString()
+                                }, null, 2)
+                            }
+                        }
+                    })
+                });
             }
         }
+        
+        return gistData;
+    } catch (error) {
+        console.error('Error saving users to database:', error);
+        throw error;
+    }
+}
 
         // Load users from database
         async function loadUsersFromDb() {
@@ -2147,96 +2167,101 @@
         }
 
         // Save cards to cloud
-        async function saveCardsToCloud() {
-            if (!realtimeSettings.token) {
-                throw new Error('Real-time settings not configured');
-            }
-            
-            try {
-                let response;
-                
-                if (realtimeSettings.gistId) {
-                    // Update existing gist
-                    response = await fetch(`https://api.github.com/gists/${realtimeSettings.gistId}`, {
-                        method: 'PATCH',
-                        headers: {
-                            'Authorization': `token ${realtimeSettings.token}`,
-                            'Content-Type': 'application/json'
-                        },
-                        body: JSON.stringify({
-                            files: {
-                                'cards.json': {
-                                    content: JSON.stringify(cards, null, 2)
-                                }
-                            }
-                        })
-                    });
-                } else {
-                    // Create new gist
-                    response = await fetch('https://api.github.com/gists', {
-                        method: 'POST',
-                        headers: {
-                            'Authorization': `token ${realtimeSettings.token}`,
-                            'Content-Type': 'application/json'
-                        },
-                        body: JSON.stringify({
-                            description: 'Lorcana Tracker Real-time Data',
-                            public: true,
-                            files: {
-                                'cards.json': {
-                                    content: JSON.stringify(cards, null, 2)
-                                }
-                            }
-                        })
-                    });
-                    
-                    if (response.ok) {
-                        const gistData = await response.json();
-                        realtimeSettings.gistId = gistData.id;
-                        
-                        // Update config
-                        localStorage.setItem('lorcanaConfig', JSON.stringify({
-                            userDbToken: userDbSettings.token,
-                            realtimeToken: realtimeSettings.token,
-                            userDbGistId: userDbSettings.gistId,
-                            realtimeGistId: realtimeSettings.gistId
-                        }));
-                        
-                        // Update config gist
-                        if (publicConfigGistId) {
-                            await fetch(`https://api.github.com/gists/${publicConfigGistId}`, {
-                                method: 'PATCH',
-                                headers: {
-                                    'Authorization': `token ${realtimeSettings.token}`,
-                                    'Content-Type': 'application/json'
-                                },
-                                body: JSON.stringify({
-                                    files: {
-                                        'config.json': {
-                                            content: JSON.stringify({
-                                                configured: true,
-                                                userDbGistId: userDbSettings.gistId,
-                                                realtimeGistId: realtimeSettings.gistId,
-                                                lastUpdated: new Date().toISOString()
-                                            }, null, 2)
-                                        }
-                                    }
-                                })
-                            });
+async function saveCardsToCloud() {
+    if (!realtimeSettings.token) {
+        throw new Error('Real-time settings not configured');
+    }
+    
+    try {
+        let response;
+        let gistData;
+        
+        if (realtimeSettings.gistId) {
+            // Update existing gist
+            response = await fetch(`https://api.github.com/gists/${realtimeSettings.gistId}`, {
+                method: 'PATCH',
+                headers: {
+                    'Authorization': `token ${realtimeSettings.token}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    files: {
+                        'cards.json': {
+                            content: JSON.stringify(cards, null, 2)
                         }
                     }
-                }
-                
-                if (!response.ok) {
-                    throw new Error(`GitHub API error: ${response.status}`);
-                }
-                
-                return await response.json();
-            } catch (error) {
-                console.error('Error saving cards to cloud:', error);
-                throw error;
+                })
+            });
+            
+            if (!response.ok) {
+                throw new Error(`GitHub API error: ${response.status}`);
+            }
+            
+            gistData = await response.json();
+        } else {
+            // Create new gist
+            response = await fetch('https://api.github.com/gists', {
+                method: 'POST',
+                headers: {
+                    'Authorization': `token ${realtimeSettings.token}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    description: 'Lorcana Tracker Real-time Data',
+                    public: true,
+                    files: {
+                        'cards.json': {
+                            content: JSON.stringify(cards, null, 2)
+                        }
+                    }
+                })
+            });
+            
+            if (!response.ok) {
+                throw new Error(`GitHub API error: ${response.status}`);
+            }
+            
+            gistData = await response.json();
+            realtimeSettings.gistId = gistData.id;
+            
+            // Update config
+            localStorage.setItem('lorcanaConfig', JSON.stringify({
+                userDbToken: userDbSettings.token,
+                realtimeToken: realtimeSettings.token,
+                userDbGistId: userDbSettings.gistId,
+                realtimeGistId: realtimeSettings.gistId
+            }));
+            
+            // Update config gist
+            if (publicConfigGistId) {
+                await fetch(`https://api.github.com/gists/${publicConfigGistId}`, {
+                    method: 'PATCH',
+                    headers: {
+                        'Authorization': `token ${realtimeSettings.token}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        files: {
+                            'config.json': {
+                                content: JSON.stringify({
+                                    configured: true,
+                                    userDbGistId: userDbSettings.gistId,
+                                    realtimeGistId: realtimeSettings.gistId,
+                                    lastUpdated: new Date().toISOString()
+                                }, null, 2)
+                            }
+                        }
+                    })
+                });
             }
         }
+        
+        return gistData;
+    } catch (error) {
+        console.error('Error saving cards to cloud:', error);
+        throw error;
+    }
+}
 
         // Load data from cloud
         async function loadDataFromCloud() {
