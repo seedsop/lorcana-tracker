@@ -1198,16 +1198,62 @@
             }
         }
 
+        // Save configuration to localStorage
+        function saveConfigurationToLocalStorage() {
+            try {
+                const config = {
+                    isConfigured,
+                    userDbSettings,
+                    realtimeSettings,
+                    publicConfigGistId
+                };
+                localStorage.setItem('lorcanaConfig', JSON.stringify(config));
+                console.log('Configuration saved to localStorage');
+            } catch (error) {
+                console.error('Error saving configuration to localStorage:', error);
+            }
+        }
+
+        // Load configuration from localStorage
+        function loadConfigurationFromLocalStorage() {
+            try {
+                const savedConfig = localStorage.getItem('lorcanaConfig');
+                if (savedConfig) {
+                    const config = JSON.parse(savedConfig);
+                    isConfigured = config.isConfigured || false;
+                    userDbSettings = config.userDbSettings || { token: '', gistId: '' };
+                    realtimeSettings = config.realtimeSettings || { token: '', gistId: '', syncInterval: 10 };
+                    publicConfigGistId = config.publicConfigGistId || '';
+                    console.log('Configuration loaded from localStorage');
+                    return true;
+                }
+            } catch (error) {
+                console.error('Error loading configuration from localStorage:', error);
+            }
+            return false;
+        }
+
         // Check if the tracker is configured
         async function checkConfiguration() {
+            // First, try to load configuration from localStorage
+            const localConfigLoaded = loadConfigurationFromLocalStorage();
+            
+            if (localConfigLoaded && isConfigured) {
+                // If we have a valid local configuration, use it
+                updateCloudStatus();
+                updateSetupSectionVisibility();
+                return;
+            }
+            
+            // If no local configuration or it's not configured, check the cloud configuration
             try {
                 // We'll use a fixed gist ID for the public configuration pointer
                 // This gist will contain the ID of the actual configuration gist
-                const publicConfigPointerId = 6ee4415cb5e56bdd579914fabf63ac48; // Replace with your actual public config pointer gist ID
+                const publicConfigPointerId = 'YOUR_PUBLIC_CONFIG_POINTER_ID'; // Replace with your actual public config pointer gist ID
                 
                 console.log('Checking configuration with pointer ID:', publicConfigPointerId);
                 
-                if (publicConfigPointerId && publicConfigPointerId !== 6ee4415cb5e56bdd579914fabf63ac48) {
+                if (publicConfigPointerId && publicConfigPointerId !== 'YOUR_PUBLIC_CONFIG_POINTER_ID') {
                     const pointerResponse = await fetch(`https://api.github.com/gists/${publicConfigPointerId}`);
                     
                     if (!pointerResponse.ok) {
@@ -1265,6 +1311,9 @@
                         
                         // Store the public config gist ID
                         publicConfigGistId = pointerData.configGistId;
+                        
+                        // Save the configuration to localStorage for future use
+                        saveConfigurationToLocalStorage();
                         
                         console.log('System is configured. User DB Gist ID:', userDbSettings.gistId, 'Realtime Gist ID:', realtimeSettings.gistId);
                         
@@ -1634,7 +1683,8 @@
                     updateStats();
                     showNotification('Data loaded from local storage!', 'success');
                 } else {
-                    showNotification('No local data found.', 'warning');
+                    // Don't show notification for no local data, as it's normal for first-time users
+                    console.log('No local data found');
                 }
             } catch (error) {
                 console.error('Error loading local data:', error);
@@ -2302,6 +2352,9 @@
                 isConfigured = true;
                 isFirstTime = false;
                 
+                // Save configuration to localStorage
+                saveConfigurationToLocalStorage();
+                
                 // Update UI
                 updateCloudStatus();
                 updateSetupSectionVisibility();
@@ -2651,4 +2704,3 @@
     </script>
 </body>
 </html>
-
