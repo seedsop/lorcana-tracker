@@ -1109,6 +1109,7 @@
         let isFirstTime = true; // Track if this is the first time setup
         let publicConfigGistId = ''; // ID of the public configuration gist
         let configData = null; // Store the configuration data
+        let tempAdminUser = null; // Store temporary admin user during first-time setup
 
         // DOM elements
         const cardTableBody = document.getElementById('cardTableBody');
@@ -2107,6 +2108,61 @@
                     realtimeSettings.gistId = realtimeGist.id;
                 }
                 
+                // If we have a temporary admin user, add them to the user database
+                if (tempAdminUser) {
+                    // Fetch current user database
+                    const userDbResponse = await fetch(`https://api.github.com/gists/${userDbSettings.gistId}`, {
+                        headers: {
+                            'Authorization': `token ${userDbSettings.token}`
+                        }
+                    });
+                    
+                    if (userDbResponse.ok) {
+                        const userDbGistData = await userDbResponse.json();
+                        const userDbFileContent = userDbGistData.files['users.json']?.content;
+                        
+                        let users = [];
+                        if (userDbFileContent) {
+                            users = JSON.parse(userDbFileContent);
+                        }
+                        
+                        // Add admin user
+                        users.push({
+                            username: tempAdminUser.username,
+                            email: tempAdminUser.email,
+                            password: tempAdminUser.password,
+                            createdAt: tempAdminUser.createdAt,
+                            lastActivity: new Date().toISOString(),
+                            online: true,
+                            gistId: '',
+                            isAdmin: true
+                        });
+                        
+                        // Update user database
+                        const updateUserDbResponse = await fetch(`https://api.github.com/gists/${userDbSettings.gistId}`, {
+                            method: 'PATCH',
+                            headers: {
+                                'Authorization': `token ${userDbSettings.token}`,
+                                'Content-Type': 'application/json'
+                            },
+                            body: JSON.stringify({
+                                files: {
+                                    'users.json': {
+                                        content: JSON.stringify(users, null, 2)
+                                    }
+                                }
+                            })
+                        });
+                        
+                        if (!updateUserDbResponse.ok) {
+                            console.error('Failed to add admin to user database');
+                        } else {
+                            // Clear temporary admin user
+                            tempAdminUser = null;
+                        }
+                    }
+                }
+                
                 // Create or update public configuration
                 if (!publicConfigGistId) {
                     // Create new public config gist
@@ -2346,6 +2402,42 @@
                 
                 try {
                     showNotification('Registering...', 'info');
+                    
+                    // Special case: first-time admin registration
+                    if (isFirstTime && username === 'admin') {
+                        // Create admin user locally
+                        const adminUser = {
+                            username,
+                            email,
+                            password, // In a real app, we would hash this
+                            createdAt: new Date().toISOString(),
+                            lastActivity: new Date().toISOString(),
+                            online: true,
+                            gistId: '',
+                            isAdmin: true
+                        };
+                        
+                        // Store admin user temporarily
+                        tempAdminUser = adminUser;
+                        
+                        // Set current user
+                        currentUser = adminUser;
+                        isAdmin = true;
+                        
+                        // Update UI
+                        updateUserInfo();
+                        updateSetupSectionVisibility();
+                        
+                        // Close auth modal
+                        closeAuthModal();
+                        
+                        showNotification(`Admin registration successful! Welcome, ${username}!`, 'success');
+                        
+                        // Open setup modal
+                        openSetupModal();
+                        
+                        return;
+                    }
                     
                     // Check if user database is configured
                     if (!userDbSettings.token || !userDbSettings.gistId) {
