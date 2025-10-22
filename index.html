@@ -1203,11 +1203,11 @@
             try {
                 // We'll use a fixed gist ID for the public configuration pointer
                 // This gist will contain the ID of the actual configuration gist
-                const publicConfigPointerId = 'YOUR_PUBLIC_CONFIG_POINTER_ID'; // Replace with your actual public config pointer gist ID
+                const publicConfigPointerId = b73dd9b8863a5f739c8ddd9da443b982; // Replace with your actual public config pointer gist ID
                 
                 console.log('Checking configuration with pointer ID:', publicConfigPointerId);
                 
-                if (publicConfigPointerId && publicConfigPointerId !== 'YOUR_PUBLIC_CONFIG_POINTER_ID') {
+                if (publicConfigPointerId && publicConfigPointerId !== b73dd9b8863a5f739c8ddd9da443b982) {
                     const pointerResponse = await fetch(`https://api.github.com/gists/${publicConfigPointerId}`);
                     
                     if (!pointerResponse.ok) {
@@ -2590,3 +2590,4 @@
     </script>
 </body>
 </html>
+
