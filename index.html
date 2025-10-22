@@ -5,7 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Lorcana Card Tracker</title>
     <style>
-        /* Keeping all existing styles unchanged */
         :root {
             --primary-color: #4a6fa5;
             --secondary-color: #166088;
@@ -409,46 +408,6 @@
             opacity: 1;
         }
 
-        .debug-panel {
-            margin-top: 20px;
-            padding: 15px;
-            background-color: #f8f9fa;
-            border-radius: 5px;
-            border: 1px solid #ddd;
-            display: none;
-        }
-
-        .debug-panel h3 {
-            margin-top: 0;
-            color: var(--primary-color);
-        }
-
-        .debug-panel pre {
-            background-color: #eee;
-            padding: 10px;
-            border-radius: 3px;
-            overflow: auto;
-            max-height: 300px;
-            font-size: 12px;
-        }
-
-        .debug-panel button {
-            margin-top: 10px;
-            background-color: var(--secondary-color);
-        }
-
-        .csv-preview {
-            margin-top: 10px;
-            padding: 10px;
-            background-color: #fff;
-            border: 1px solid #ddd;
-            border-radius: 3px;
-            max-height: 200px;
-            overflow: auto;
-            font-size: 12px;
-            white-space: pre;
-        }
-
         .modal {
             display: none;
             position: fixed;
@@ -636,28 +595,6 @@
             font-size: 12px;
         }
 
-        .loading {
-            display: inline-block;
-            width: 20px;
-            height: 20px;
-            border: 3px solid rgba(255,255,255,.3);
-            border-radius: 50%;
-            border-top-color: #fff;
-            animation: spin 1s ease-in-out infinite;
-        }
-
-        .sync-indicator {
-            display: inline-block;
-            width: 16px;
-            height: 16px;
-            margin-left: 5px;
-            vertical-align: middle;
-        }
-
-        .sync-indicator.syncing {
-            animation: spin 1s linear infinite;
-        }
-
         .setup-section {
             margin-top: 20px;
             padding: 15px;
@@ -707,6 +644,24 @@
 
         .reconfigure-section p {
             margin-bottom: 15px;
+        }
+
+        .export-section {
+            margin-top: 20px;
+            padding: 15px;
+            background-color: #f8f9fa;
+            border-radius: 8px;
+        }
+
+        .export-section h3 {
+            margin-top: 0;
+            color: var(--secondary-color);
+        }
+
+        .export-buttons {
+            display: flex;
+            gap: 10px;
+            margin-top: 10px;
         }
 
         @keyframes spin {
@@ -764,13 +719,13 @@
             </div>
             
             <div class="real-time-status" id="realTimeStatus" style="display: none;">
-                <span class="sync-indicator" id="syncIndicator">⟳</span>
+                <span class="sync-icon">⟳</span>
                 <span>Real-time sync active</span>
             </div>
             
             <div class="cloud-status">
                 <div class="status-indicator" id="cloudStatusIndicator"></div>
-                <span id="cloudStatusText">Not connected to cloud storage</span>
+                <span id="cloudStatusText">Checking cloud storage...</span>
             </div>
         </div>
         
@@ -779,7 +734,7 @@
         </div>
         
         <div class="file-upload">
-            <label for="csvFile">Upload CSV File</label>
+            <label for="csvFile">Upload Card Database (CSV)</label>
             <input type="file" id="csvFile" accept=".csv">
         </div>
         
@@ -833,8 +788,6 @@
             
             <div class="button-group">
                 <button id="resetFilters">Reset Filters</button>
-                <button id="saveData" disabled>Save Local</button>
-                <button id="loadData" disabled>Load Local</button>
                 <button id="saveCloud" class="success-btn" disabled>Save to Cloud</button>
                 <button id="loadCloud" class="secondary-btn" disabled>Load from Cloud</button>
                 <button id="refreshUsers" class="info-btn">Refresh Users</button>
@@ -938,7 +891,7 @@
             <button id="setupBtn" class="success-btn">Configure Tracker</button>
         </div>
         
-        <div id="firstTimeSetupSection" class="first-time-setup">
+        <div id="firstTimeSetupSection" class="first-time-setup" style="display: none;">
             <h3>First Time Setup</h3>
             <p>Welcome to Lorcana Card Tracker! This appears to be your first time using this tracker.</p>
             <p>To get started, please register as an administrator with the username "admin".</p>
@@ -953,11 +906,13 @@
             <button id="reconfigureBtn" class="success-btn">Enter Configuration Tokens</button>
         </div>
         
-        <div id="debugPanel" class="debug-panel">
-            <h3>Debug Information</h3>
-            <div id="csvPreview" class="csv-preview"></div>
-            <pre id="debugInfo"></pre>
-            <button id="closeDebug">Close Debug Panel</button>
+        <div id="exportSection" class="export-section" style="display: none;">
+            <h3>Export Your Collection</h3>
+            <p>Export your card collection data for backup or sharing purposes.</p>
+            <div class="export-buttons">
+                <button id="exportCsvBtn" class="info-btn">Export as CSV</button>
+                <button id="exportJsonBtn" class="info-btn">Export as JSON</button>
+            </div>
         </div>
     </div>
 
@@ -1119,8 +1074,6 @@
         const colorFilter = document.getElementById('colorFilter');
         const rarityFilter = document.getElementById('rarityFilter');
         const resetFiltersBtn = document.getElementById('resetFilters');
-        const saveDataBtn = document.getElementById('saveData');
-        const loadDataBtn = document.getElementById('loadData');
         const saveCloudBtn = document.getElementById('saveCloud');
         const loadCloudBtn = document.getElementById('loadCloud');
         const refreshUsersBtn = document.getElementById('refreshUsers');
@@ -1146,17 +1099,15 @@
         const firstTimeSetupBtn = document.getElementById('firstTimeSetupBtn');
         const reconfigureSection = document.getElementById('reconfigureSection');
         const reconfigureBtn = document.getElementById('reconfigureBtn');
+        const exportSection = document.getElementById('exportSection');
+        const exportCsvBtn = document.getElementById('exportCsvBtn');
+        const exportJsonBtn = document.getElementById('exportJsonBtn');
         const notification = document.getElementById('notification');
-        const debugPanel = document.getElementById('debugPanel');
-        const debugInfoEl = document.getElementById('debugInfo');
-        const csvPreview = document.getElementById('csvPreview');
-        const closeDebugBtn = document.getElementById('closeDebug');
         const authModal = document.getElementById('authModal');
         const setupModal = document.getElementById('setupModal');
         const cloudStatusIndicator = document.getElementById('cloudStatusIndicator');
         const cloudStatusText = document.getElementById('cloudStatusText');
         const realTimeStatus = document.getElementById('realTimeStatus');
-        const syncIndicator = document.getElementById('syncIndicator');
         const userInfo = document.getElementById('userInfo');
         const loginRegisterBtn = document.getElementById('loginRegisterBtn');
         const viewOnlyMessage = document.getElementById('viewOnlyMessage');
@@ -1198,62 +1149,16 @@
             }
         }
 
-        // Save configuration to localStorage
-        function saveConfigurationToLocalStorage() {
-            try {
-                const config = {
-                    isConfigured,
-                    userDbSettings,
-                    realtimeSettings,
-                    publicConfigGistId
-                };
-                localStorage.setItem('lorcanaConfig', JSON.stringify(config));
-                console.log('Configuration saved to localStorage');
-            } catch (error) {
-                console.error('Error saving configuration to localStorage:', error);
-            }
-        }
-
-        // Load configuration from localStorage
-        function loadConfigurationFromLocalStorage() {
-            try {
-                const savedConfig = localStorage.getItem('lorcanaConfig');
-                if (savedConfig) {
-                    const config = JSON.parse(savedConfig);
-                    isConfigured = config.isConfigured || false;
-                    userDbSettings = config.userDbSettings || { token: '', gistId: '' };
-                    realtimeSettings = config.realtimeSettings || { token: '', gistId: '', syncInterval: 10 };
-                    publicConfigGistId = config.publicConfigGistId || '';
-                    console.log('Configuration loaded from localStorage');
-                    return true;
-                }
-            } catch (error) {
-                console.error('Error loading configuration from localStorage:', error);
-            }
-            return false;
-        }
-
         // Check if the tracker is configured
         async function checkConfiguration() {
-            // First, try to load configuration from localStorage
-            const localConfigLoaded = loadConfigurationFromLocalStorage();
-            
-            if (localConfigLoaded && isConfigured) {
-                // If we have a valid local configuration, use it
-                updateCloudStatus();
-                updateSetupSectionVisibility();
-                return;
-            }
-            
-            // If no local configuration or it's not configured, check the cloud configuration
             try {
                 // We'll use a fixed gist ID for the public configuration pointer
                 // This gist will contain the ID of the actual configuration gist
-                const publicConfigPointerId = 4f540926f4064bf6865f3b20ccd4edac; // Replace with your actual public config pointer gist ID
+                const publicConfigPointerId = 'YOUR_PUBLIC_CONFIG_POINTER_ID'; // Replace with your actual public config pointer gist ID
                 
                 console.log('Checking configuration with pointer ID:', publicConfigPointerId);
                 
-                if (publicConfigPointerId && publicConfigPointerId !== 4f540926f4064bf6865f3b20ccd4edac) {
+                if (publicConfigPointerId && publicConfigPointerId !== 'YOUR_PUBLIC_CONFIG_POINTER_ID') {
                     const pointerResponse = await fetch(`https://api.github.com/gists/${publicConfigPointerId}`);
                     
                     if (!pointerResponse.ok) {
@@ -1312,9 +1217,6 @@
                         // Store the public config gist ID
                         publicConfigGistId = pointerData.configGistId;
                         
-                        // Save the configuration to localStorage for future use
-                        saveConfigurationToLocalStorage();
-                        
                         console.log('System is configured. User DB Gist ID:', userDbSettings.gistId, 'Realtime Gist ID:', realtimeSettings.gistId);
                         
                         updateCloudStatus();
@@ -1363,6 +1265,13 @@
                 firstTimeSetupSection.style.display = 'none';
                 reconfigureSection.style.display = 'none';
             }
+            
+            // Show export section if user is logged in
+            if (currentUser) {
+                exportSection.style.display = 'block';
+            } else {
+                exportSection.style.display = 'none';
+            }
         }
 
         // Initialize the app
@@ -1372,9 +1281,6 @@
             
             // Populate set filter
             populateSetFilter();
-            
-            // Load data from localStorage if available
-            loadLocalData();
             
             // Render the card table
             renderCardTable();
@@ -1420,11 +1326,13 @@
             resetFiltersBtn.addEventListener('click', resetFilters);
             
             // Save/Load buttons
-            saveDataBtn.addEventListener('click', saveLocalData);
-            loadDataBtn.addEventListener('click', loadLocalData);
             saveCloudBtn.addEventListener('click', saveCloudData);
             loadCloudBtn.addEventListener('click', loadCloudData);
             refreshUsersBtn.addEventListener('click', refreshUsers);
+            
+            // Export buttons
+            exportCsvBtn.addEventListener('click', exportToCsv);
+            exportJsonBtn.addEventListener('click', exportToJson);
             
             // View tabs
             myCollectionTab.addEventListener('click', () => switchView('my'));
@@ -1449,11 +1357,6 @@
             // Setup modal
             cancelSetupBtn.addEventListener('click', closeSetupModal);
             saveSetupBtn.addEventListener('click', saveSetup);
-            
-            // Debug panel
-            closeDebugBtn.addEventListener('click', () => {
-                debugPanel.style.display = 'none';
-            });
             
             // Table sorting
             document.querySelectorAll('.card-table th.sortable').forEach(th => {
@@ -1486,7 +1389,6 @@
             reader.onload = function(event) {
                 try {
                     const csvData = event.target.result;
-                    csvPreview.textContent = csvData;
                     
                     // Parse CSV data
                     const lines = csvData.split('\n');
@@ -1519,7 +1421,7 @@
                     applyFilters();
                     updateStats();
                     
-                    showNotification('CSV file loaded successfully!', 'success');
+                    showNotification('Card database uploaded successfully!', 'success');
                 } catch (error) {
                     console.error('Error parsing CSV:', error);
                     showNotification('Error parsing CSV file. Please check the format.', 'error');
@@ -1527,6 +1429,64 @@
             };
             
             reader.readAsText(file);
+        }
+
+        // Export collection to CSV
+        function exportToCsv() {
+            try {
+                // Create CSV content
+                let csvContent = "name,subtitle,set,card_number,color_1,color_2,rarity,normal,foil\n";
+                
+                cards.forEach(card => {
+                    csvContent += `"${card.name}","${card.subtitle}","${card.set}","${card.card_number}","${card.color_1}","${card.color_2}","${card.rarity}",${card.normal},${card.foil}\n`;
+                });
+                
+                // Create download link
+                const blob = new Blob([csvContent], { type: 'text/csv' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `lorcana_collection_${currentUser.username}_${new Date().toISOString().split('T')[0]}.csv`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+                
+                showNotification('Collection exported as CSV!', 'success');
+            } catch (error) {
+                console.error('Error exporting to CSV:', error);
+                showNotification('Error exporting to CSV.', 'error');
+            }
+        }
+
+        // Export collection to JSON
+        function exportToJson() {
+            try {
+                // Create JSON content
+                const jsonData = {
+                    username: currentUser.username,
+                    exportDate: new Date().toISOString(),
+                    cards: cards
+                };
+                
+                const jsonString = JSON.stringify(jsonData, null, 2);
+                
+                // Create download link
+                const blob = new Blob([jsonString], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `lorcana_collection_${currentUser.username}_${new Date().toISOString().split('T')[0]}.json`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+                
+                showNotification('Collection exported as JSON!', 'success');
+            } catch (error) {
+                console.error('Error exporting to JSON:', error);
+                showNotification('Error exporting to JSON.', 'error');
+            }
         }
 
         // Apply filters to the card table
@@ -1661,37 +1621,6 @@
             uniqueCardsEl.textContent = uniqueCards;
         }
 
-        // Save data to localStorage
-        function saveLocalData() {
-            try {
-                localStorage.setItem('lorcanaCards', JSON.stringify(cards));
-                showNotification('Data saved locally!', 'success');
-            } catch (error) {
-                console.error('Error saving local data:', error);
-                showNotification('Error saving local data.', 'error');
-            }
-        }
-
-        // Load data from localStorage
-        function loadLocalData() {
-            try {
-                const savedData = localStorage.getItem('lorcanaCards');
-                if (savedData) {
-                    cards = JSON.parse(savedData);
-                    filteredCards = [...cards];
-                    renderCardTable();
-                    updateStats();
-                    showNotification('Data loaded from local storage!', 'success');
-                } else {
-                    // Don't show notification for no local data, as it's normal for first-time users
-                    console.log('No local data found');
-                }
-            } catch (error) {
-                console.error('Error loading local data:', error);
-                showNotification('Error loading local data.', 'error');
-            }
-        }
-
         // Save data to cloud
         async function saveCloudData() {
             if (!userDbSettings.token || !realtimeSettings.token) {
@@ -1769,7 +1698,7 @@
         // Load data from cloud
         async function loadCloudData() {
             if (!userDbSettings.token || !currentUser.gistId) {
-                showNotification('Cloud storage not configured or no collection saved yet.', 'warning');
+                showNotification('No collection saved yet. Save your collection to the cloud first.', 'warning');
                 return;
             }
             
@@ -1794,9 +1723,6 @@
                 filteredCards = [...cards];
                 renderCardTable();
                 updateStats();
-                
-                // Save to localStorage as well
-                saveLocalData();
                 
                 showNotification('Data loaded from cloud!', 'success');
             } catch (error) {
@@ -1926,7 +1852,6 @@
                 if (fileContent) {
                     allUsers = JSON.parse(fileContent);
                     renderUserStats();
-                    renderActivityFeed();
                     showNotification('Users refreshed!', 'success');
                 } else {
                     showNotification('No users data found.', 'warning');
@@ -2021,39 +1946,6 @@
             allUsersFoilEl.textContent = totalFoil;
         }
 
-        // Render activity feed
-        function renderActivityFeed() {
-            activityFeed.innerHTML = '';
-            
-            if (userActivities.length === 0) {
-                activityFeed.innerHTML = '<div class="activity-item">No recent activity</div>';
-                return;
-            }
-            
-            // Sort activities by timestamp (newest first)
-            const sortedActivities = [...userActivities].sort((a, b) => 
-                new Date(b.timestamp) - new Date(a.timestamp)
-            );
-            
-            // Show only the latest 10 activities
-            const recentActivities = sortedActivities.slice(0, 10);
-            
-            recentActivities.forEach(activity => {
-                const item = document.createElement('div');
-                item.classList.add('activity-item');
-                
-                const date = new Date(activity.timestamp);
-                const timeString = date.toLocaleString();
-                
-                item.innerHTML = `
-                    <div>${activity.message}</div>
-                    <div class="activity-time">${timeString}</div>
-                `;
-                
-                activityFeed.appendChild(item);
-            });
-        }
-
         // Switch between views
         function switchView(view) {
             currentView = view;
@@ -2085,7 +1977,7 @@
                 aggregateAllUsersCards();
                 renderCardTable();
                 
-                // Refresh users and activities
+                // Refresh users
                 refreshUsers();
             }
         }
@@ -2351,9 +2243,6 @@
                 // Update system state
                 isConfigured = true;
                 isFirstTime = false;
-                
-                // Save configuration to localStorage
-                saveConfigurationToLocalStorage();
                 
                 // Update UI
                 updateCloudStatus();
@@ -2704,4 +2593,3 @@
     </script>
 </body>
 </html>
-
