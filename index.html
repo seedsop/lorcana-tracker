@@ -496,6 +496,14 @@
             border-radius: 0 4px 4px 0;
         }
 
+        .error-box {
+            background-color: #f8d7da;
+            border-left: 6px solid #dc3545;
+            margin-bottom: 15px;
+            padding: 10px;
+            border-radius: 0 4px 4px 0;
+        }
+
         .auth-tabs {
             display: flex;
             margin-bottom: 15px;
@@ -662,6 +670,16 @@
             display: flex;
             gap: 10px;
             margin-top: 10px;
+        }
+
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid rgba(255,255,255,.3);
+            border-radius: 50%;
+            border-top-color: #fff;
+            animation: spin 1s ease-in-out infinite;
         }
 
         @keyframes spin {
@@ -981,11 +999,14 @@
                 </div>
                 <div class="warning-box">
                     <p>You'll need to create a GitHub Personal Access Token with <strong>gist</strong> scope.</p>
+                    <p><a href="https://github.com/settings/tokens" target="_blank">Create Token Here</a></p>
+                </div>
+                <div id="setupErrorBox" class="error-box" style="display: none;">
+                    <p id="setupErrorMessage"></p>
                 </div>
                 <div class="form-group">
                     <label for="setupUserDbToken">User Database Token</label>
                     <input type="password" id="setupUserDbToken" placeholder="ghp_...">
-                    <small>Create at: <a href="https://github.com/settings/tokens" target="_blank">github.com/settings/tokens</a></small>
                 </div>
                 <div class="form-group">
                     <label for="setupUserDbGistId">User Database Gist ID (optional)</label>
@@ -1133,9 +1154,11 @@
         const registerEmail = document.getElementById('registerEmail');
         const registerPassword = document.getElementById('registerPassword');
         const confirmPassword = document.getElementById('confirmPassword');
+        const setupErrorBox = document.getElementById('setupErrorBox');
+        const setupErrorMessage = document.getElementById('setupErrorMessage');
 
         // Configuration - UPDATE THIS WITH YOUR PUBLIC CONFIG GIST ID
-        const PUBLIC_CONFIG_POINTER_ID = 'd3ae933ba551939b44f6ad3f13a125ea'; // Replace with your actual public config pointer gist ID
+        const PUBLIC_CONFIG_POINTER_ID = 'YOUR_PUBLIC_CONFIG_POINTER_ID'; // Replace with your actual public config pointer gist ID
 
         // Token management functions
         function saveTokens() {
@@ -1154,16 +1177,27 @@
             return false;
         }
 
-        // GitHub API functions
-        async function fetchGistContent(gistId, filename) {
+        // GitHub API functions with better error handling
+        async function fetchGistContent(gistId, filename, token = '') {
             try {
-                const response = await fetch(`https://api.github.com/gists/${gistId}`);
-                if (!response.ok) throw new Error(`Failed to fetch gist: ${response.status}`);
+                const headers = {};
+                if (token) {
+                    headers['Authorization'] = `token ${token}`;
+                }
+                
+                const response = await fetch(`https://api.github.com/gists/${gistId}`, { headers });
+                
+                if (!response.ok) {
+                    const errorData = await response.json().catch(() => ({}));
+                    throw new Error(`Failed to fetch gist: ${response.status} - ${errorData.message || response.statusText}`);
+                }
                 
                 const gistData = await response.json();
                 const file = gistData.files[filename];
                 
-                if (!file) throw new Error(`File ${filename} not found in gist`);
+                if (!file) {
+                    throw new Error(`File ${filename} not found in gist`);
+                }
                 
                 return JSON.parse(file.content);
             } catch (error) {
@@ -1189,7 +1223,10 @@
                     })
                 });
                 
-                if (!response.ok) throw new Error(`Failed to update gist: ${response.status}`);
+                if (!response.ok) {
+                    const errorData = await response.json().catch(() => ({}));
+                    throw new Error(`Failed to update gist: ${response.status} - ${errorData.message || response.statusText}`);
+                }
                 
                 return await response.json();
             } catch (error) {
@@ -1217,12 +1254,37 @@
                     })
                 });
                 
-                if (!response.ok) throw new Error(`Failed to create gist: ${response.status}`);
+                if (!response.ok) {
+                    const errorData = await response.json().catch(() => ({}));
+                    throw new Error(`Failed to create gist: ${response.status} - ${errorData.message || response.statusText}`);
+                }
                 
                 const gistData = await response.json();
                 return gistData.id;
             } catch (error) {
                 console.error(`Error creating gist:`, error);
+                throw error;
+            }
+        }
+
+        // Test token validity
+        async function testToken(token) {
+            try {
+                const response = await fetch('https://api.github.com/user', {
+                    headers: {
+                        'Authorization': `token ${token}`
+                    }
+                });
+                
+                if (!response.ok) {
+                    const errorData = await response.json().catch(() => ({}));
+                    throw new Error(`Invalid token: ${response.status} - ${errorData.message || response.statusText}`);
+                }
+                
+                const userData = await response.json();
+                return userData;
+            } catch (error) {
+                console.error('Error testing token:', error);
                 throw error;
             }
         }
@@ -1247,7 +1309,7 @@
             try {
                 console.log('Checking configuration with pointer ID:', PUBLIC_CONFIG_POINTER_ID);
                 
-                if (PUBLIC_CONFIG_POINTER_ID && PUBLIC_CONFIG_POINTER_ID !== 'd3ae933ba551939b44f6ad3f13a125ea') {
+                if (PUBLIC_CONFIG_POINTER_ID && PUBLIC_CONFIG_POINTER_ID !== 'YOUR_PUBLIC_CONFIG_POINTER_ID') {
                     const pointerResponse = await fetch(`https://api.github.com/gists/${PUBLIC_CONFIG_POINTER_ID}`);
                     
                     if (!pointerResponse.ok) {
@@ -1372,6 +1434,17 @@
             setTimeout(() => {
                 notification.classList.remove('show');
             }, 3000);
+        }
+
+        // Show setup error
+        function showSetupError(message) {
+            setupErrorMessage.textContent = message;
+            setupErrorBox.style.display = 'block';
+        }
+
+        // Hide setup error
+        function hideSetupError() {
+            setupErrorBox.style.display = 'none';
         }
 
         // Populate set filter
@@ -1565,7 +1638,7 @@
             
             try {
                 // Fetch user data
-                const userData = await fetchGistContent(userDbSettings.gistId, 'users.json');
+                const userData = await fetchGistContent(userDbSettings.gistId, 'users.json', userDbSettings.token);
                 
                 // Update local data
                 allUsers = userData.users || [];
@@ -1795,20 +1868,48 @@
             showNotification('Logged out successfully', 'success');
         }
 
-        // Save configuration
+        // Save configuration with improved error handling
         async function saveConfiguration() {
-            const userDbToken = setupUserDbTokenInput.value;
-            const userDbGistId = setupUserDbGistIdInput.value;
-            const realtimeToken = setupRealtimeTokenInput.value;
-            const realtimeGistId = setupRealtimeGistIdInput.value;
+            const userDbToken = setupUserDbTokenInput.value.trim();
+            const userDbGistId = setupUserDbGistIdInput.value.trim();
+            const realtimeToken = setupRealtimeTokenInput.value.trim();
+            const realtimeGistId = setupRealtimeGistIdInput.value.trim();
             const syncInterval = parseInt(setupSyncIntervalInput.value);
             
-            if (!userDbToken || !realtimeToken) {
-                showNotification('Please enter both tokens', 'error');
+            // Hide previous errors
+            hideSetupError();
+            
+            // Validate inputs
+            if (!userDbToken) {
+                showSetupError('Please enter a User Database Token');
                 return;
             }
             
+            if (!realtimeToken) {
+                showSetupError('Please enter a Real-time Data Token');
+                return;
+            }
+            
+            if (userDbToken.length < 40) {
+                showSetupError('User Database Token appears to be invalid (too short)');
+                return;
+            }
+            
+            if (realtimeToken.length < 40) {
+                showSetupError('Real-time Data Token appears to be invalid (too short)');
+                return;
+            }
+            
+            // Show loading state
+            saveSetupBtn.disabled = true;
+            saveSetupBtn.innerHTML = '<span class="loading"></span> Saving...';
+            
             try {
+                // Test tokens
+                showNotification('Testing tokens...', 'info');
+                await testToken(userDbToken);
+                await testToken(realtimeToken);
+                
                 // Save tokens to settings
                 userDbSettings.token = userDbToken;
                 realtimeSettings.token = realtimeToken;
@@ -1819,12 +1920,14 @@
                 
                 // Create or use existing gists
                 if (!userDbGistId) {
+                    showNotification('Creating user database gist...', 'info');
                     userDbSettings.gistId = await createGist('users.json', { users: allUsers }, userDbToken);
                 } else {
                     userDbSettings.gistId = userDbGistId;
                 }
                 
                 if (!realtimeGistId) {
+                    showNotification('Creating real-time data gist...', 'info');
                     realtimeSettings.gistId = await createGist('realtime.json', { activities: userActivities }, realtimeToken);
                 } else {
                     realtimeSettings.gistId = realtimeGistId;
@@ -1843,14 +1946,17 @@
                 // Create or update configuration gist
                 let configGistId;
                 if (publicConfigGistId) {
+                    showNotification('Updating configuration...', 'info');
                     await updateGistContent(publicConfigGistId, 'config.json', configData, userDbToken);
                     configGistId = publicConfigGistId;
                 } else {
+                    showNotification('Creating configuration gist...', 'info');
                     configGistId = await createGist('config.json', configData, userDbToken, true);
                 }
                 
                 // Update public pointer if needed
-                if (PUBLIC_CONFIG_POINTER_ID !== 'd3ae933ba551939b44f6ad3f13a125ea') {
+                if (PUBLIC_CONFIG_POINTER_ID !== 'YOUR_PUBLIC_CONFIG_POINTER_ID') {
+                    showNotification('Updating public pointer...', 'info');
                     const pointerData = {
                         configGistId: configGistId
                     };
@@ -1883,7 +1989,12 @@
                 startRealtimeSync();
             } catch (error) {
                 console.error('Error saving configuration:', error);
+                showSetupError(`Configuration failed: ${error.message}`);
                 showNotification('Failed to save configuration', 'error');
+            } finally {
+                // Reset button state
+                saveSetupBtn.disabled = false;
+                saveSetupBtn.innerHTML = 'Save Configuration';
             }
         }
 
@@ -1896,7 +2007,7 @@
             realtimeSettings.syncTimer = setInterval(async () => {
                 try {
                     // Fetch latest data
-                    const realtimeData = await fetchGistContent(realtimeSettings.gistId, 'realtime.json');
+                    const realtimeData = await fetchGistContent(realtimeSettings.gistId, 'realtime.json', realtimeSettings.token);
                     
                     // Check if there are updates
                     if (realtimeData.lastUpdate > realtimeSettings.lastSync) {
@@ -2156,6 +2267,7 @@
             saveSetupBtn.addEventListener('click', saveConfiguration);
             cancelSetupBtn.addEventListener('click', () => {
                 setupModal.style.display = 'none';
+                hideSetupError();
             });
             
             // Export
@@ -2167,6 +2279,7 @@
                 btn.addEventListener('click', () => {
                     authModal.style.display = 'none';
                     setupModal.style.display = 'none';
+                    hideSetupError();
                 });
             });
             
@@ -2177,6 +2290,7 @@
                 }
                 if (e.target === setupModal) {
                     setupModal.style.display = 'none';
+                    hideSetupError();
                 }
             });
         }
