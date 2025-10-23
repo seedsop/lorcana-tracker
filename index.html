@@ -686,6 +686,25 @@
             to { transform: rotate(360deg); }
         }
 
+        .token-prompt {
+            background-color: #e8f5e9;
+            border-left: 6px solid #28a745;
+            margin-bottom: 15px;
+            padding: 10px;
+            border-radius: 0 4px 4px 0;
+        }
+
+        .token-prompt h4 {
+            margin-top: 0;
+            color: #2e7d32;
+        }
+
+        .token-info {
+            font-size: 12px;
+            color: #6c757d;
+            margin-top: 5px;
+        }
+
         @media (max-width: 768px) {
             .controls {
                 flex-direction: column;
@@ -996,6 +1015,7 @@
             <div class="modal-body">
                 <div class="info-box">
                     <p>This tracker uses GitHub Gists to store user data and enable real-time synchronization.</p>
+                    <p>Tokens will be encrypted and stored online for cross-browser access.</p>
                 </div>
                 <div class="warning-box">
                     <p>You'll need to create a GitHub Personal Access Token with <strong>gist</strong> scope.</p>
@@ -1028,6 +1048,66 @@
             <div class="modal-footer">
                 <button id="cancelSetup" class="secondary-btn">Cancel</button>
                 <button id="saveSetup" class="success-btn">Save Configuration</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Token Prompt Modal -->
+    <div id="tokenPromptModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Enter GitHub Tokens</h2>
+                <span class="close">&times;</span>
+            </div>
+            <div class="modal-body">
+                <div class="token-prompt">
+                    <h4>Welcome Back!</h4>
+                    <p>This tracker has been configured, but you need to enter your GitHub tokens to access your data.</p>
+                    <p>Your tokens will be stored in this browser for future use.</p>
+                </div>
+                <div id="tokenPromptErrorBox" class="error-box" style="display: none;">
+                    <p id="tokenPromptErrorMessage"></p>
+                </div>
+                <div class="form-group">
+                    <label for="promptUserDbToken">User Database Token</label>
+                    <input type="password" id="promptUserDbToken" placeholder="ghp_...">
+                </div>
+                <div class="form-group">
+                    <label for="promptRealtimeToken">Real-time Data Token</label>
+                    <input type="password" id="promptRealtimeToken" placeholder="ghp_...">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button id="cancelTokenPrompt" class="secondary-btn">Cancel</button>
+                <button id="submitTokenPrompt" class="success-btn">Connect</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Admin Password Modal -->
+    <div id="adminPasswordModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Admin Authentication</h2>
+                <span class="close">&times;</span>
+            </div>
+            <div class="modal-body">
+                <div class="info-box">
+                    <p>This system has been configured with encrypted tokens.</p>
+                    <p>Please enter the admin password to decrypt and use the stored tokens.</p>
+                </div>
+                <div id="adminPasswordErrorBox" class="error-box" style="display: none;">
+                    <p id="adminPasswordErrorMessage"></p>
+                </div>
+                <div class="form-group">
+                    <label for="adminPasswordInput">Admin Password</label>
+                    <input type="password" id="adminPasswordInput" placeholder="Enter admin password">
+                    <div class="token-info">This will decrypt the stored GitHub tokens for this session.</div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button id="cancelAdminPassword" class="secondary-btn">Cancel</button>
+                <button id="submitAdminPassword" class="success-btn">Decrypt Tokens</button>
             </div>
         </div>
     </div>
@@ -1086,6 +1166,7 @@
         let publicConfigGistId = ''; // ID of the public configuration gist
         let configData = null; // Store the configuration data
         let tempAdminUser = null; // Store temporary admin user during first-time setup
+        let encryptedTokens = null; // Store encrypted tokens from config
 
         // DOM elements
         const cardTableBody = document.getElementById('cardTableBody');
@@ -1126,6 +1207,8 @@
         const notification = document.getElementById('notification');
         const authModal = document.getElementById('authModal');
         const setupModal = document.getElementById('setupModal');
+        const tokenPromptModal = document.getElementById('tokenPromptModal');
+        const adminPasswordModal = document.getElementById('adminPasswordModal');
         const cloudStatusIndicator = document.getElementById('cloudStatusIndicator');
         const cloudStatusText = document.getElementById('cloudStatusText');
         const realTimeStatus = document.getElementById('realTimeStatus');
@@ -1156,9 +1239,48 @@
         const confirmPassword = document.getElementById('confirmPassword');
         const setupErrorBox = document.getElementById('setupErrorBox');
         const setupErrorMessage = document.getElementById('setupErrorMessage');
+        const promptUserDbTokenInput = document.getElementById('promptUserDbToken');
+        const promptRealtimeTokenInput = document.getElementById('promptRealtimeToken');
+        const submitTokenPromptBtn = document.getElementById('submitTokenPrompt');
+        const cancelTokenPromptBtn = document.getElementById('cancelTokenPrompt');
+        const tokenPromptErrorBox = document.getElementById('tokenPromptErrorBox');
+        const tokenPromptErrorMessage = document.getElementById('tokenPromptErrorMessage');
+        const adminPasswordInput = document.getElementById('adminPasswordInput');
+        const submitAdminPasswordBtn = document.getElementById('submitAdminPassword');
+        const cancelAdminPasswordBtn = document.getElementById('cancelAdminPassword');
+        const adminPasswordErrorBox = document.getElementById('adminPasswordErrorBox');
+        const adminPasswordErrorMessage = document.getElementById('adminPasswordErrorMessage');
 
         // Configuration - UPDATE THIS WITH YOUR PUBLIC CONFIG GIST ID
         const PUBLIC_CONFIG_POINTER_ID = 'd3ae933ba551939b44f6ad3f13a125ea'; // Replace with your actual public config pointer gist ID
+
+        // Simple encryption/decryption functions
+        function encrypt(text, password) {
+            // Simple XOR encryption with password-derived key
+            // In production, use a proper encryption library
+            let encrypted = '';
+            for (let i = 0; i < text.length; i++) {
+                const charCode = text.charCodeAt(i) ^ password.charCodeAt(i % password.length);
+                encrypted += String.fromCharCode(charCode);
+            }
+            return btoa(encrypted); // Base64 encode for safe storage
+        }
+
+        function decrypt(encryptedText, password) {
+            try {
+                // Decode from Base64
+                const encoded = atob(encryptedText);
+                let decrypted = '';
+                for (let i = 0; i < encoded.length; i++) {
+                    const charCode = encoded.charCodeAt(i) ^ password.charCodeAt(i % password.length);
+                    decrypted += String.fromCharCode(charCode);
+                }
+                return decrypted;
+            } catch (error) {
+                console.error('Decryption error:', error);
+                return null;
+            }
+        }
 
         // Token management functions
         function saveTokens() {
@@ -1364,11 +1486,28 @@
                         // Store the gist IDs from the public config
                         userDbSettings.gistId = configData.userDbGistId;
                         realtimeSettings.gistId = configData.realtimeGistId;
+                        realtimeSettings.syncInterval = configData.syncInterval || 10;
                         
                         // Store the public config gist ID
                         publicConfigGistId = pointerData.configGistId;
                         
+                        // Check if encrypted tokens are available
+                        if (configData.encryptedTokens) {
+                            encryptedTokens = configData.encryptedTokens;
+                            console.log('Found encrypted tokens in configuration');
+                        }
+                        
                         console.log('System is configured. User DB Gist ID:', userDbSettings.gistId, 'Realtime Gist ID:', realtimeSettings.gistId);
+                        
+                        // Try to load tokens from localStorage first
+                        const hasTokens = loadTokens();
+                        
+                        // If we don't have tokens but the system is configured, check for encrypted tokens
+                        if (!hasTokens && encryptedTokens) {
+                            // Don't show any prompt immediately, wait for user interaction
+                            updateSetupSectionVisibility();
+                            return;
+                        }
                         
                         updateCloudStatus();
                         updateSetupSectionVisibility();
@@ -1408,8 +1547,8 @@
             if (isFirstTime) {
                 firstTimeSetupSection.style.display = 'block';
                 reconfigureSection.style.display = 'none';
-            } else if (isConfigured && !userDbSettings.token) {
-                // System is configured but we don't have tokens
+            } else if (isConfigured && !userDbSettings.token && !encryptedTokens) {
+                // System is configured but we don't have tokens or encrypted tokens
                 firstTimeSetupSection.style.display = 'none';
                 reconfigureSection.style.display = 'block';
             } else {
@@ -1445,6 +1584,28 @@
         // Hide setup error
         function hideSetupError() {
             setupErrorBox.style.display = 'none';
+        }
+
+        // Show token prompt error
+        function showTokenPromptError(message) {
+            tokenPromptErrorMessage.textContent = message;
+            tokenPromptErrorBox.style.display = 'block';
+        }
+
+        // Hide token prompt error
+        function hideTokenPromptError() {
+            tokenPromptErrorBox.style.display = 'none';
+        }
+
+        // Show admin password error
+        function showAdminPasswordError(message) {
+            adminPasswordErrorMessage.textContent = message;
+            adminPasswordErrorBox.style.display = 'block';
+        }
+
+        // Hide admin password error
+        function hideAdminPasswordError() {
+            adminPasswordErrorBox.style.display = 'none';
         }
 
         // Populate set filter
@@ -1810,6 +1971,13 @@
                 // Check if user is admin
                 if (username === 'admin') {
                     isAdmin = true;
+                    
+                    // If admin and we have encrypted tokens but no local tokens, prompt for password
+                    if (encryptedTokens && !userDbSettings.token) {
+                        authModal.style.display = 'none';
+                        adminPasswordModal.style.display = 'block';
+                        return;
+                    }
                 }
                 
                 // Save to cloud if configured
@@ -1933,13 +2101,28 @@
                     realtimeSettings.gistId = realtimeGistId;
                 }
                 
-                // Get the username for configuration - FIXED PART
+                // Get the username for configuration
                 let configUsername = 'admin';
                 if (tempAdminUser) {
                     configUsername = tempAdminUser.username;
                 } else if (currentUser) {
                     configUsername = currentUser.username;
                 }
+                
+                // Get admin password for encryption
+                let adminPassword = '';
+                if (tempAdminUser) {
+                    adminPassword = atob(tempAdminUser.password);
+                } else if (currentUser && currentUser.username === 'admin') {
+                    adminPassword = atob(currentUser.password);
+                }
+                
+                // Encrypt tokens with admin password
+                const encryptedTokensData = {
+                    userDbToken: encrypt(userDbToken, adminPassword),
+                    realtimeToken: encrypt(realtimeToken, adminPassword),
+                    timestamp: new Date().toISOString()
+                };
                 
                 // Create configuration data
                 const configData = {
@@ -1948,7 +2131,8 @@
                     realtimeGistId: realtimeSettings.gistId,
                     syncInterval: syncInterval,
                     configuredBy: configUsername,
-                    configuredAt: new Date().toISOString()
+                    configuredAt: new Date().toISOString(),
+                    encryptedTokens: encryptedTokensData
                 };
                 
                 // Create or update configuration gist
@@ -1991,7 +2175,7 @@
                 updateAuthUI();
                 
                 setupModal.style.display = 'none';
-                showNotification('Configuration saved successfully!', 'success');
+                showNotification('Configuration saved successfully! Tokens are encrypted and stored online.', 'success');
                 
                 // Start real-time sync
                 startRealtimeSync();
@@ -2003,6 +2187,137 @@
                 // Reset button state
                 saveSetupBtn.disabled = false;
                 saveSetupBtn.innerHTML = 'Save Configuration';
+            }
+        }
+
+        // Handle token prompt submission
+        async function handleTokenPrompt() {
+            const userDbToken = promptUserDbTokenInput.value.trim();
+            const realtimeToken = promptRealtimeTokenInput.value.trim();
+            
+            // Hide previous errors
+            hideTokenPromptError();
+            
+            // Validate inputs
+            if (!userDbToken) {
+                showTokenPromptError('Please enter a User Database Token');
+                return;
+            }
+            
+            if (!realtimeToken) {
+                showTokenPromptError('Please enter a Real-time Data Token');
+                return;
+            }
+            
+            if (userDbToken.length < 40) {
+                showTokenPromptError('User Database Token appears to be invalid (too short)');
+                return;
+            }
+            
+            if (realtimeToken.length < 40) {
+                showTokenPromptError('Real-time Data Token appears to be invalid (too short)');
+                return;
+            }
+            
+            // Show loading state
+            submitTokenPromptBtn.disabled = true;
+            submitTokenPromptBtn.innerHTML = '<span class="loading"></span> Connecting...';
+            
+            try {
+                // Test tokens
+                showNotification('Testing tokens...', 'info');
+                await testToken(userDbToken);
+                await testToken(realtimeToken);
+                
+                // Save tokens to settings
+                userDbSettings.token = userDbToken;
+                realtimeSettings.token = realtimeToken;
+                
+                // Save tokens to localStorage
+                saveTokens();
+                
+                // Update UI
+                updateCloudStatus();
+                updateSetupSectionVisibility();
+                
+                // Load user data
+                await loadUserDataFromCloud();
+                
+                tokenPromptModal.style.display = 'none';
+                showNotification('Connected to cloud storage successfully!', 'success');
+                
+                // Start real-time sync
+                startRealtimeSync();
+            } catch (error) {
+                console.error('Error connecting to cloud storage:', error);
+                showTokenPromptError(`Connection failed: ${error.message}`);
+                showNotification('Failed to connect to cloud storage', 'error');
+            } finally {
+                // Reset button state
+                submitTokenPromptBtn.disabled = false;
+                submitTokenPromptBtn.innerHTML = 'Connect';
+            }
+        }
+
+        // Handle admin password submission
+        async function handleAdminPassword() {
+            const password = adminPasswordInput.value.trim();
+            
+            // Hide previous errors
+            hideAdminPasswordError();
+            
+            // Validate input
+            if (!password) {
+                showAdminPasswordError('Please enter the admin password');
+                return;
+            }
+            
+            // Show loading state
+            submitAdminPasswordBtn.disabled = true;
+            submitAdminPasswordBtn.innerHTML = '<span class="loading"></span> Decrypting...';
+            
+            try {
+                // Decrypt tokens
+                showNotification('Decrypting tokens...', 'info');
+                
+                const userDbToken = decrypt(encryptedTokens.userDbToken, password);
+                const realtimeToken = decrypt(encryptedTokens.realtimeToken, password);
+                
+                if (!userDbToken || !realtimeToken) {
+                    throw new Error('Failed to decrypt tokens. Please check your password.');
+                }
+                
+                // Test tokens
+                await testToken(userDbToken);
+                await testToken(realtimeToken);
+                
+                // Save tokens to settings
+                userDbSettings.token = userDbToken;
+                realtimeSettings.token = realtimeToken;
+                
+                // Save tokens to localStorage
+                saveTokens();
+                
+                // Update UI
+                updateCloudStatus();
+                updateSetupSectionVisibility();
+                
+                // Load user data
+                await loadUserDataFromCloud();
+                
+                adminPasswordModal.style.display = 'none';
+                showNotification('Tokens decrypted successfully! Connected to cloud storage.', 'success');
+                
+                // Start real-time sync
+                startRealtimeSync();
+            } catch (error) {
+                console.error('Error decrypting tokens:', error);
+                showAdminPasswordError(`Decryption failed: ${error.message}`);
+                showNotification('Failed to decrypt tokens', 'error');
+            } finally {
+                // Reset button state
+                submitAdminPasswordBtn.disabled = false;
+                submitAdminPasswordBtn.innerHTML = 'Decrypt Tokens';
             }
         }
 
@@ -2269,13 +2584,27 @@
             });
             
             reconfigureBtn.addEventListener('click', () => {
-                setupModal.style.display = 'block';
+                tokenPromptModal.style.display = 'block';
             });
             
             saveSetupBtn.addEventListener('click', saveConfiguration);
             cancelSetupBtn.addEventListener('click', () => {
                 setupModal.style.display = 'none';
                 hideSetupError();
+            });
+            
+            // Token prompt
+            submitTokenPromptBtn.addEventListener('click', handleTokenPrompt);
+            cancelTokenPromptBtn.addEventListener('click', () => {
+                tokenPromptModal.style.display = 'none';
+                hideTokenPromptError();
+            });
+            
+            // Admin password
+            submitAdminPasswordBtn.addEventListener('click', handleAdminPassword);
+            cancelAdminPasswordBtn.addEventListener('click', () => {
+                adminPasswordModal.style.display = 'none';
+                hideAdminPasswordError();
             });
             
             // Export
@@ -2287,7 +2616,11 @@
                 btn.addEventListener('click', () => {
                     authModal.style.display = 'none';
                     setupModal.style.display = 'none';
+                    tokenPromptModal.style.display = 'none';
+                    adminPasswordModal.style.display = 'none';
                     hideSetupError();
+                    hideTokenPromptError();
+                    hideAdminPasswordError();
                 });
             });
             
@@ -2300,14 +2633,19 @@
                     setupModal.style.display = 'none';
                     hideSetupError();
                 }
+                if (e.target === tokenPromptModal) {
+                    tokenPromptModal.style.display = 'none';
+                    hideTokenPromptError();
+                }
+                if (e.target === adminPasswordModal) {
+                    adminPasswordModal.style.display = 'none';
+                    hideAdminPasswordError();
+                }
             });
         }
 
         // Initialize the app
         async function init() {
-            // Load tokens from localStorage first
-            loadTokens();
-            
             // Check if the tracker is configured
             await checkConfiguration();
             
