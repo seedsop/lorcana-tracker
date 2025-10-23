@@ -1158,7 +1158,7 @@
         const setupErrorMessage = document.getElementById('setupErrorMessage');
 
         // Configuration - UPDATE THIS WITH YOUR PUBLIC CONFIG GIST ID
-        const PUBLIC_CONFIG_POINTER_ID = 'YOUR_PUBLIC_CONFIG_POINTER_ID'; // Replace with your actual public config pointer gist ID
+        const PUBLIC_CONFIG_POINTER_ID = 'd3ae933ba551939b44f6ad3f13a125ea'; // Replace with your actual public config pointer gist ID
 
         // Token management functions
         function saveTokens() {
@@ -1309,7 +1309,7 @@
             try {
                 console.log('Checking configuration with pointer ID:', PUBLIC_CONFIG_POINTER_ID);
                 
-                if (PUBLIC_CONFIG_POINTER_ID && PUBLIC_CONFIG_POINTER_ID !== 'YOUR_PUBLIC_CONFIG_POINTER_ID') {
+                if (PUBLIC_CONFIG_POINTER_ID && PUBLIC_CONFIG_POINTER_ID !== 'd3ae933ba551939b44f6ad3f13a125ea') {
                     const pointerResponse = await fetch(`https://api.github.com/gists/${PUBLIC_CONFIG_POINTER_ID}`);
                     
                     if (!pointerResponse.ok) {
@@ -1933,13 +1933,21 @@
                     realtimeSettings.gistId = realtimeGistId;
                 }
                 
+                // Get the username for configuration - FIXED PART
+                let configUsername = 'admin';
+                if (tempAdminUser) {
+                    configUsername = tempAdminUser.username;
+                } else if (currentUser) {
+                    configUsername = currentUser.username;
+                }
+                
                 // Create configuration data
                 const configData = {
                     configured: true,
                     userDbGistId: userDbSettings.gistId,
                     realtimeGistId: realtimeSettings.gistId,
                     syncInterval: syncInterval,
-                    configuredBy: currentUser.username,
+                    configuredBy: configUsername,
                     configuredAt: new Date().toISOString()
                 };
                 
@@ -1955,7 +1963,7 @@
                 }
                 
                 // Update public pointer if needed
-                if (PUBLIC_CONFIG_POINTER_ID !== 'YOUR_PUBLIC_CONFIG_POINTER_ID') {
+                if (PUBLIC_CONFIG_POINTER_ID !== 'd3ae933ba551939b44f6ad3f13a125ea') {
                     showNotification('Updating public pointer...', 'info');
                     const pointerData = {
                         configGistId: configGistId
